@@ -1,0 +1,94 @@
+========================================================================
+FRIDAY AI Assistant - Quickstart Command Reference
+========================================================================
+
+Follow these commands to set up, activate, run, and test the project.
+
+1. INITIAL SETUP
+----------------
+# Create Python Virtual Environment (Standard venv):
+python -m venv .venv
+
+# Activate Virtual Environment:
+# In PowerShell:
+.venv\Scripts\Activate.ps1
+# In Command Prompt:
+.venv\Scripts\activate.bat
+
+# Install Backend Dependencies:
+pip install -r backend/requirements.txt
+
+# Install Frontend Dependencies:
+cd frontend
+npm install
+cd ..
+
+
+2. RUNNING THE SYSTEM
+---------------------
+# Run the FastAPI backend:
+# (Ensure your .venv is activated before running)
+python backend/run.py
+
+# Run the React frontend (Open in a new terminal):
+cd frontend
+npm run dev
+
+
+3. LLM ENGINE (Ollama)
+----------------------
+# (Optional) Install portable Ollama inside .venv:
+python setup_ollama.py
+
+# Start Ollama server:
+ollama serve
+
+# In a new activated shell, pull the llama3.2 model:
+ollama pull llama3.2
+
+# Check if Ollama is running:
+curl http://localhost:11434/
+
+
+4. RUNNING TESTS
+----------------
+# Activate environment and run pytest:
+.venv\Scripts\Activate.ps1
+pytest backend/tests/
+
+
+
+
+--------------------------------------------------------------------------------------------
+3 parallel terminals first (cmd)
+
+Terminal 1: Ollama Server (Isolated LLM Host)
+
+# 1. Activate the environment (this adds ollama to your PATH)
+.venv\Scripts\Activate.ps1 (for powershell) 
+.venv\Scripts\activate.bat (for cmd)
+
+# 2. Start the Ollama server
+ollama serve
+
+
+Terminal 2: FastAPI Backend (F.R.I.D.A.Y. API Core)
+
+# 1. Activate the environment
+.venv\Scripts\Activate.ps1 (for powershell)
+.venv\Scripts\activate.bat (for cmd)
+
+# 2. Pull the model (Only needed the very first time)
+ollama pull llama3.2
+
+# 3. Start the backend server
+python backend/run.py
+
+
+Terminal 3: React Frontend (Cybernetic Dashboard UI)
+
+# 1. Enter the frontend directory
+cd frontend
+
+# 2. Run the Vite developer server
+npm run dev
