@@ -32,17 +32,16 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [telemetry, setTelemetry] = useState(null);
   const [health, setHealth] = useState(null);
+  const [availableModels, setAvailableModels] = useState([]);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [openTraces, setOpenTraces] = useState({});
   
   const chatEndRef = useRef(null);
 
-  // Fetch telemetry and system health on mount
   useEffect(() => {
     refreshAll();
   }, []);
 
-  // Scroll to bottom of chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
@@ -52,7 +51,7 @@ function App() {
   };
 
   const refreshAll = async () => {
-    await Promise.all([fetchTelemetry(), fetchHealth()]);
+    await Promise.all([fetchTelemetry(), fetchHealth(), fetchModels()]);
   };
 
   const fetchHealth = async () => {
@@ -68,8 +67,37 @@ function App() {
         status: 'degraded',
         version: '2.0.0',
         environment: 'offline',
+        active_model: 'llama3.2',
         ollama: { connected: false, configured_model: 'llama3.2', error: 'Backend unreachable' }
       });
+    }
+  };
+
+  const fetchModels = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/models');
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableModels(data.models || []);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch model list:", e);
+    }
+  };
+
+  const handleModelChange = async (e) => {
+    const selected = e.target.value;
+    try {
+      const res = await fetch('http://localhost:8000/api/models/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: selected })
+      });
+      if (res.ok) {
+        await refreshAll();
+      }
+    } catch (err) {
+      console.error("Failed to select model:", err);
     }
   };
 
@@ -156,20 +184,34 @@ function App() {
           <span className="status-dot pulse"></span>
         </div>
 
-        {/* Real System Telemetry Widget */}
+        {/* Real System Telemetry & Model Manager Widget */}
         <div className="widget">
           <div className="widget-title">
             <Cpu size={14} />
             <span>Core Subsystems</span>
           </div>
-          <div className="telemetry-row">
-            <span className="telemetry-label">LLM Engine:</span>
-            <span className="telemetry-value cyan">
-              Ollama / {health?.ollama?.configured_model || 'llama3.2'}
-            </span>
+          <div className="telemetry-row" style={{ alignItems: 'center' }}>
+            <span className="telemetry-label">Active Model:</span>
+            {availableModels.length > 0 ? (
+              <select 
+                value={health?.active_model || 'llama3.2'} 
+                onChange={handleModelChange}
+                className="model-select-dropdown"
+              >
+                {availableModels.map(m => (
+                  <option key={m.name} value={m.name}>
+                    {m.name} ({m.parameter_size})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="telemetry-value cyan">
+                {health?.active_model || health?.ollama?.configured_model || 'llama3.2'}
+              </span>
+            )}
           </div>
           <div className="telemetry-row">
-            <span className="telemetry-label">Model Status:</span>
+            <span className="telemetry-label">Engine Status:</span>
             <span className={`telemetry-badge ${health?.ollama?.connected ? 'live' : 'offline'}`}>
               {health?.ollama?.connected ? 'READY' : 'OFFLINE'}
             </span>
@@ -179,8 +221,8 @@ function App() {
             <span className="telemetry-value">v{health?.version || '2.0.0'}</span>
           </div>
           <div className="telemetry-row">
-            <span className="telemetry-label">Core Mode:</span>
-            <span className="telemetry-value">Local-First</span>
+            <span className="telemetry-label">Routing Mode:</span>
+            <span className="telemetry-value">Task-Adaptive</span>
           </div>
         </div>
 
@@ -297,7 +339,7 @@ function App() {
                     style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
                   >
                     <span className="trace-summary">
-                      ⚡ AGENT TRACE: {msg.trace.intent?.intent?.toUpperCase()} ({msg.trace.steps_executed?.length} steps, {msg.trace.total_duration_seconds}s)
+                      ⚡ AGENT TRACE: {msg.trace.intent?.intent?.toUpperCase()} ({msg.trace.steps_executed?.length} steps, {msg.trace.total_duration_seconds}s, model: {msg.trace.model_used})
                     </span>
                     <span style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)' }}>
                       {openTraces[index] ? '▲ HIDE PLAN' : '▼ VIEW PLAN'}

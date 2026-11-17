@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import chat, monitor
+from app.routes import chat, monitor, models
 from app.config import settings
 from app.services.ollama_service import ollama_service
+from app.models.model_manager import model_manager
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -22,6 +23,7 @@ app.add_middleware(
 # Include routes
 app.include_router(chat.router)
 app.include_router(monitor.router)
+app.include_router(models.router)
 
 @app.get("/")
 def read_root():
@@ -29,15 +31,24 @@ def read_root():
         "status": "online",
         "assistant": settings.PROJECT_NAME,
         "version": settings.VERSION,
+        "active_model": model_manager.active_model,
         "message": "Subsystems active. Core LLM interface online."
     }
 
 @app.get("/api/health")
 async def health_check():
     ollama_health = await ollama_service.check_health()
+    available_models = await model_manager.get_available_models()
     return {
         "status": "healthy" if ollama_health["connected"] else "degraded",
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
-        "ollama": ollama_health,
+        "active_model": model_manager.active_model,
+        "ollama": {
+            "connected": ollama_health["connected"],
+            "base_url": ollama_health["base_url"],
+            "configured_model": model_manager.active_model,
+            "installed_models": [m.name for m in available_models],
+            "error": ollama_health.get("error")
+        }
     }

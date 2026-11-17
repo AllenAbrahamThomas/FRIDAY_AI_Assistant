@@ -1,0 +1,145 @@
+import time
+import httpx
+import logging
+import asyncio
+from typing import List, Dict, Any, Optional
+from app.config import settings
+from app.models.base_provider import BaseModelProvider, ModelInfo, ModelGenerationResult, ProviderHealth
+
+logger = logging.getLogger(__name__)
+
+class OllamaProvider(BaseModelProvider):
+    def __init__(self, base_url: Optional[str] = None, default_model: Optional[str] = None):
+        super().__init__(name="ollama")
+        self.base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip("/")
+        self.default_model = default_model or settings.OLLAMA_MODEL
+        self.timeout = settings.OLLAMA_TIMEOUT_SECONDS
+        self.retry_count = settings.OLLAMA_RETRY_COUNT
+
+    def _get_client(self, timeout: Optional[float] = None) -> httpx.AsyncClient:
+        return httpx.AsyncClient(timeout=timeout or self.timeout)
+
+    async def generate(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: float = 0.5
+    ) -> ModelGenerationResult:
+        target_model = model or self.default_model
+        sys_prompt = system_prompt or "You are FRIDAY, a helpful assistant."
+        payload = {
+            "model": target_model,
+            "prompt": f"System: {sys_prompt}\nUser: {prompt}\nFriday:",
+            "stream": False,
+            "options": {
+                "temperature": temperature
+            }
+        }
+
+        start_time = time.perf_counter()
+        last_error = None
+
+        for attempt in range(self.retry_count + 1):
+            try:
+                async with self._get_client() as client:
+                    response = await client.post(f"{self.base_url}/api/generate", json=payload)
+                    latency = round(time.perf_counter() - start_time, 3)
+
+                    if response.status_code == 200:
+                        data = response.json()
+                        text = data.get("response", "").strip()
+                        eval_count = data.get("eval_count")
+                        return ModelGenerationResult(
+                            text=text,
+                            model=target_model,
+                            latency_seconds=latency,
+                            token_count=eval_count,
+                            success=True,
+                            error=None
+                        )
+                    elif response.status_code == 404:
+                        err = f"Ollama model '{target_model}' not found (HTTP 404)"
+                        logger.error(err)
+                        return ModelGenerationResult(
+                            text="",
+                            model=target_model,
+                            latency_seconds=latency,
+                            success=False,
+                            error=err
+                        )
+                    else:
+                        last_error = f"Ollama returned HTTP {response.status_code}"
+            except httpx.ConnectError:
+                latency = round(time.perf_counter() - start_time, 3)
+                err = f"Cannot connect to Ollama at {self.base_url} (Connection refused)"
+                logger.error(err)
+                return ModelGenerationResult(
+                    text="",
+                    model=target_model,
+                    latency_seconds=latency,
+                    success=False,
+                    error=err
+                )
+            except httpx.TimeoutException:
+                last_error = f"Ollama generation timed out after {self.timeout}s"
+                logger.warning(f"{last_error} on attempt {attempt + 1}")
+                if attempt < self.retry_count:
+                    await asyncio.sleep(0.5)
+            except Exception as e:
+                last_error = str(e)
+                if attempt < self.retry_count:
+                    await asyncio.sleep(0.5)
+
+        latency = round(time.perf_counter() - start_time, 3)
+        return ModelGenerationResult(
+            text="",
+            model=target_model,
+            latency_seconds=latency,
+            success=False,
+            error=last_error or "Generation failed after retries"
+        )
+
+    async def list_models(self) -> List[ModelInfo]:
+        try:
+            async with self._get_client(timeout=5.0) as client:
+                res = await client.get(f"{self.base_url}/api/tags")
+                if res.status_code == 200:
+                    data = res.json()
+                    models: List[ModelInfo] = []
+                    for item in data.get("models", []):
+                        raw_size = item.get("size", 0)
+                        size_gb = round(raw_size / (1024 ** 3), 2)
+                        details = item.get("details", {})
+                        models.append(ModelInfo(
+                            name=item.get("name", ""),
+                            model_id=item.get("model", item.get("name", "")),
+                            parameter_size=details.get("parameter_size", "Unknown"),
+                            size_gb=size_gb,
+                            family=details.get("family", "Unknown"),
+                            capabilities=item.get("capabilities", ["completion"])
+                        ))
+                    return models
+        except Exception as e:
+            logger.error(f"Error listing Ollama models: {e}")
+        return []
+
+    async def check_health(self) -> ProviderHealth:
+        try:
+            models = await self.list_models()
+            model_names = [m.name for m in models]
+            return ProviderHealth(
+                connected=len(models) > 0 or True,
+                provider_name="ollama",
+                base_url=self.base_url,
+                available_models=model_names,
+                error=None
+            )
+        except Exception as e:
+            return ProviderHealth(
+                connected=False,
+                provider_name="ollama",
+                base_url=self.base_url,
+                available_models=[],
+                error=str(e)
+            )

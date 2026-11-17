@@ -740,3 +740,21 @@ body::after {
   font-size: 0.7rem;
   color: var(--text-secondary);
 }
+
+/* Model Selector Dropdown */
+.model-select-dropdown {
+  background: rgba(12, 16, 23, 0.9);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-family: var(--font-tech);
+  font-size: 0.75rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.model-select-dropdown:hover {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 5px rgba(0, 240, 255, 0.2);
+}

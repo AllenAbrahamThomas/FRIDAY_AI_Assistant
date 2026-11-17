@@ -9,7 +9,7 @@ from app.core.intent_classifier import intent_classifier
 from app.core.planner import task_planner
 from app.core.execution_engine import execution_engine
 from app.core.context_manager import context_manager
-from app.services.ollama_service import ollama_service
+from app.models.model_manager import model_manager
 from app.services.voice_service import voice_service
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class FRIDAYOrchestrator:
     """
     Core decision-making engine of FRIDAY 2.0.
     Orchestrates the entire request lifecycle: intent classification,
-    ordered task planning, tool execution, response synthesis, and execution tracing.
+    ordered task planning, tool execution, model selection & synthesis, and execution tracing.
     """
 
     async def process_request(self, prompt: str, history: List[Any] = None) -> AgentResponse:
@@ -44,9 +44,10 @@ class FRIDAYOrchestrator:
         observations, step_warnings = await execution_engine.execute_plan(plan)
         warnings.extend(step_warnings)
 
-        # 4. Result Synthesis
+        # 4. Result Synthesis with Model Manager
         final_response_text = ""
         synthesis_step = next((s for s in plan.steps if s.tool_name is None), None)
+        model_used = model_manager.select_model_for_task(intent.intent)
 
         if intent.intent == "world_intelligence":
             trigger_dashboard = True
@@ -67,10 +68,15 @@ class FRIDAYOrchestrator:
                 "Do not use markdown bullet lists; write in smooth, conversational paragraphs or clean formatted inline items. "
                 "Reflect a professional, confident tone."
             )
-            final_response_text = await ollama_service.raw_generate(prompt=wm_prompt, system_prompt=wm_system_prompt)
+            gen_res = await model_manager.generate(
+                prompt=wm_prompt,
+                system_prompt=wm_system_prompt,
+                task_intent=intent.intent
+            )
+            final_response_text = gen_res.text
+            model_used = gen_res.model or model_used
 
             if not final_response_text:
-                # Offline synthesis fallback
                 context_str = observations[0]["data"].get("summary_context", "") if observations else ""
                 news_str = observations[1]["data"].get("news_context", "") if len(observations) > 1 else ""
                 final_response_text = (
@@ -79,7 +85,7 @@ class FRIDAYOrchestrator:
                     f"Latest World News Feed:\n{news_str}\n\n"
                     "Let me open up the world monitor so you can better visualize what's happening, Boss."
                 )
-                error_msg = f"Ollama connection offline or model '{ollama_service.model}' unavailable"
+                error_msg = gen_res.error or f"Ollama connection offline or model '{model_used}' unavailable"
 
         elif intent.intent == "research":
             sources_used.append("Google News RSS Search")
@@ -95,12 +101,18 @@ class FRIDAYOrchestrator:
                 "3. Present a clear, well-supported, evidence-grounded answer. "
                 "4. Address the user as Allen or Sir in a sleek, confident, professional tone."
             )
-            final_response_text = await ollama_service.raw_generate(prompt=research_prompt, system_prompt=research_system)
+            gen_res = await model_manager.generate(
+                prompt=research_prompt,
+                system_prompt=research_system,
+                task_intent=intent.intent
+            )
+            final_response_text = gen_res.text
+            model_used = gen_res.model or model_used
 
             if not final_response_text:
                 obs_text = str(observations[0]["data"]) if observations else "No search context available."
                 final_response_text = f"I retrieved these news items regarding your query, Sir: {obs_text}"
-                error_msg = f"Ollama connection offline or model '{ollama_service.model}' unavailable"
+                error_msg = gen_res.error or f"Ollama connection offline or model '{model_used}' unavailable"
 
         elif intent.intent == "weather":
             weather_data = observations[0].get("data") if observations else {}
@@ -111,34 +123,49 @@ class FRIDAYOrchestrator:
 
             local_info_context = f"User Location: {city}\nCurrent Weather: {temp}°C, {desc}"
             weather_sys = context_manager.build_system_prompt()
-            final_response_text = await ollama_service.raw_generate(
+            gen_res = await model_manager.generate(
                 prompt=f"Local Context:\n{local_info_context}\n\nUser request: {prompt}",
-                system_prompt=weather_sys
+                system_prompt=weather_sys,
+                task_intent=intent.intent
             )
+            final_response_text = gen_res.text
+            model_used = gen_res.model or model_used
 
             if not final_response_text:
                 final_response_text = (
                     f"Telemetry sensor check: Location detected as {city}. "
                     f"Current temperature is {temp}°C with {desc}."
                 )
-                error_msg = f"Ollama connection offline or model '{ollama_service.model}' unavailable"
+                error_msg = gen_res.error or f"Ollama connection offline or model '{model_used}' unavailable"
 
         elif intent.intent == "greeting":
             greet_sys = context_manager.build_system_prompt(is_initial=True, is_greeting=True)
-            final_response_text = await ollama_service.raw_generate(prompt=prompt, system_prompt=greet_sys)
+            gen_res = await model_manager.generate(
+                prompt=prompt,
+                system_prompt=greet_sys,
+                task_intent=intent.intent
+            )
+            final_response_text = gen_res.text
+            model_used = gen_res.model or model_used
             if not final_response_text:
                 final_response_text = f"Hello Allen. {context_manager.get_time_greeting()} How can I assist you today, Sir?"
 
         else:
             # Coding or general task
             gen_sys = context_manager.build_system_prompt()
-            final_response_text = await ollama_service.raw_generate(prompt=prompt, system_prompt=gen_sys)
+            gen_res = await model_manager.generate(
+                prompt=prompt,
+                system_prompt=gen_sys,
+                task_intent=intent.intent
+            )
+            final_response_text = gen_res.text
+            model_used = gen_res.model or model_used
             if not final_response_text:
                 final_response_text = (
-                    f"Diagnostic mode active, Allen. Core LLM engine at {ollama_service.base_url} is currently delayed. "
+                    f"Diagnostic mode active, Allen. Core LLM engine is currently delayed. "
                     "Subsystems are functional."
                 )
-                error_msg = f"Ollama connection offline or model '{ollama_service.model}' unavailable"
+                error_msg = gen_res.error or f"Ollama connection offline or model '{model_used}' unavailable"
 
         if synthesis_step:
             synthesis_step.status = "completed"
@@ -157,13 +184,13 @@ class FRIDAYOrchestrator:
             plan=plan,
             steps_executed=plan.steps,
             total_duration_seconds=total_duration,
-            model_used=ollama_service.model,
+            model_used=model_used,
             sources_used=sources_used,
             warnings=warnings,
             created_at=created_at
         )
 
-        logger.info(f"[{trace_id}] Request completed in {total_duration}s. Trigger dashboard: {trigger_dashboard}")
+        logger.info(f"[{trace_id}] Request completed in {total_duration}s using model '{model_used}'.")
 
         return AgentResponse(
             response=final_response_text,

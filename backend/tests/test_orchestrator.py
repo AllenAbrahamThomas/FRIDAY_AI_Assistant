@@ -9,6 +9,7 @@ from app.core.planner import task_planner
 from app.core.orchestrator import friday_orchestrator
 from app.tools.registry import tool_registry
 from app.tools.base_tool import BaseTool
+from app.models.base_provider import ModelGenerationResult
 
 def test_intent_classification():
     # World intelligence
@@ -70,10 +71,17 @@ async def test_orchestrator_process_world_intelligence():
     fake_news = [{"title": "Historic peace talks initiated", "source": "Reuters"}]
     fake_llm_response = "Give me a sec, Boss. Here is the latest world intelligence briefing."
 
+    fake_gen_result = ModelGenerationResult(
+        text=fake_llm_response,
+        model="llama3.2",
+        latency_seconds=0.1,
+        success=True
+    )
+
     with patch("app.tools.registry.tool_registry.execute", AsyncMock(side_effect=[
         {"success": True, "data": {"telemetry": fake_telemetry, "summary_context": "Risk: 70%"}, "error": None, "duration_seconds": 0.05},
         {"success": True, "data": {"articles": fake_news, "news_context": "News feed loaded."}, "error": None, "duration_seconds": 0.05}
-    ])), patch("app.services.ollama_service.ollama_service.raw_generate", AsyncMock(return_value=fake_llm_response)), \
+    ])), patch("app.models.model_manager.model_manager.generate", AsyncMock(return_value=fake_gen_result)), \
          patch("app.services.voice_service.voice_service.speak"):
 
         result = await friday_orchestrator.process_request("What is happening in the world today?")
