@@ -24,7 +24,8 @@ function App() {
   const [messages, setMessages] = useState([
     {
       role: 'friday',
-      content: getInitialGreeting()
+      content: getInitialGreeting(),
+      trace: null
     }
   ]);
   const [input, setInput] = useState('');
@@ -32,6 +33,7 @@ function App() {
   const [telemetry, setTelemetry] = useState(null);
   const [health, setHealth] = useState(null);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const [openTraces, setOpenTraces] = useState({});
   
   const chatEndRef = useRef(null);
 
@@ -44,6 +46,10 @@ function App() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  const toggleTrace = (index) => {
+    setOpenTraces(prev => ({ ...prev, [index]: !prev[index] }));
+  };
 
   const refreshAll = async () => {
     await Promise.all([fetchTelemetry(), fetchHealth()]);
@@ -100,7 +106,7 @@ function App() {
 
     const userText = input;
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: userText }]);
+    setMessages(prev => [...prev, { role: 'user', content: userText, trace: null }]);
     setIsLoading(true);
 
     try {
@@ -112,7 +118,11 @@ function App() {
 
       if (response.ok) {
         const data = await response.json();
-        setMessages(prev => [...prev, { role: 'friday', content: data.response }]);
+        setMessages(prev => [...prev, { 
+          role: 'friday', 
+          content: data.response,
+          trace: data.execution_trace 
+        }]);
         if (data.trigger_dashboard) {
           setIsPopupOpen(true);
           window.open('https://www.worldmonitor.app/', '_blank');
@@ -120,14 +130,16 @@ function App() {
       } else {
         setMessages(prev => [...prev, { 
           role: 'friday', 
-          content: 'F.R.I.D.A.Y. Warning: I experienced an issue communicating with my backend matrix interface.' 
+          content: 'F.R.I.D.A.Y. Warning: I experienced an issue communicating with my backend matrix interface.',
+          trace: null
         }]);
       }
     } catch (err) {
       console.error(err);
       setMessages(prev => [...prev, { 
         role: 'friday', 
-        content: 'F.R.I.D.A.Y. Diagnostic: Local API server is unreachable. Please make sure the FastAPI backend is running on port 8000.' 
+        content: 'F.R.I.D.A.Y. Diagnostic: Local API server is unreachable. Please make sure the FastAPI backend is running on port 8000.',
+        trace: null
       }]);
     } finally {
       setIsLoading(false);
@@ -275,6 +287,44 @@ function App() {
                 {msg.role === 'friday' ? 'Friday Assistant' : 'Tony'}
               </div>
               <div>{msg.content}</div>
+
+              {/* Collapsible Agent Execution Trace */}
+              {msg.trace && (
+                <div className="trace-box">
+                  <div 
+                    className="trace-header" 
+                    onClick={() => toggleTrace(index)}
+                    style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                  >
+                    <span className="trace-summary">
+                      ⚡ AGENT TRACE: {msg.trace.intent?.intent?.toUpperCase()} ({msg.trace.steps_executed?.length} steps, {msg.trace.total_duration_seconds}s)
+                    </span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)' }}>
+                      {openTraces[index] ? '▲ HIDE PLAN' : '▼ VIEW PLAN'}
+                    </span>
+                  </div>
+                  {openTraces[index] && (
+                    <div className="trace-details">
+                      <div className="trace-plan-title">Goal: {msg.trace.plan?.task_goal}</div>
+                      <div className="trace-steps">
+                        {msg.trace.steps_executed?.map((s, idx) => (
+                          <div className="trace-step-item" key={idx}>
+                            <span className="trace-step-num">[{s.step_number}]</span>
+                            <span className="trace-step-desc">{s.description}</span>
+                            <span className={`trace-step-status ${s.status}`}>{s.status.toUpperCase()}</span>
+                            {s.tool_name && <span className="trace-tool-tag">{s.tool_name}</span>}
+                          </div>
+                        ))}
+                      </div>
+                      {msg.trace.sources_used?.length > 0 && (
+                        <div className="trace-sources">
+                          Sources: {msg.trace.sources_used.join(' • ')}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
           {isLoading && (

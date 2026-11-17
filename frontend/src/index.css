@@ -656,3 +656,87 @@ body::after {
   overflow-y: auto;
   height: 100%;
 }
+
+/* Agent Execution Trace Styles */
+.trace-box {
+  margin-top: 10px;
+  background: rgba(0, 240, 255, 0.05);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: var(--font-tech);
+  font-size: 0.8rem;
+}
+
+.trace-header {
+  user-select: none;
+}
+
+.trace-summary {
+  color: var(--accent-cyan);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.trace-details {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(0, 240, 255, 0.2);
+}
+
+.trace-plan-title {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  margin-bottom: 6px;
+}
+
+.trace-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trace-step-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+}
+
+.trace-step-num {
+  color: var(--accent-teal);
+}
+
+.trace-step-desc {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.trace-step-status.completed {
+  color: var(--accent-teal);
+  font-size: 0.7rem;
+}
+
+.trace-step-status.failed {
+  color: var(--accent-red);
+  font-size: 0.7rem;
+}
+
+.trace-step-status.pending {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.trace-tool-tag {
+  background: rgba(0, 240, 255, 0.15);
+  color: var(--accent-cyan);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.65rem;
+}
+
+.trace-sources {
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
