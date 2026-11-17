@@ -1,7 +1,10 @@
+import html
 import httpx
 import xml.etree.ElementTree as ET
 import urllib.parse
 import logging
+import re
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +25,7 @@ class SearchService:
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             }
             
-            async with httpx.AsyncClient(timeout=8.0) as client:
+            async with httpx.AsyncClient(timeout=settings.SEARCH_TIMEOUT_SECONDS) as client:
                 # Crucial: follow redirects because Google News redirects to Ceid regions
                 resp = await client.get(rss_url, headers=headers, follow_redirects=True)
                 if resp.status_code == 200:
@@ -33,15 +36,27 @@ class SearchService:
                         title = item.find('title')
                         pub_date = item.find('pubDate')
                         source = item.find('source')
+                        link = item.find('link')
+                        description = item.find('description')
                         
                         title_text = title.text if title is not None else "No Title"
-                        date_text = pub_date.text[:16] if pub_date is not None else "Recent"
+                        date_text = pub_date.text[:16] if pub_date is not None and pub_date.text else "Publication time unavailable"
                         source_text = source.text if source is not None else "News Source"
+                        article_url = link.text.strip() if link is not None and link.text else ""
+                        snippet = ""
+                        if description is not None and description.text:
+                            snippet = re.sub(
+                                r"\s+",
+                                " ",
+                                re.sub(r"<[^>]+>", " ", html.unescape(description.text))
+                            ).strip()
                         
                         results.append(
                             f"Publish Date: {date_text}\n"
                             f"Source: {source_text}\n"
                             f"News Headline: {title_text}\n"
+                            f"URL: {article_url}\n"
+                            f"Snippet: {snippet}\n"
                         )
         except Exception as e:
             logger.warning(f"Google News RSS context query failed: {e}")
@@ -57,8 +72,10 @@ class SearchService:
                         for r in news_results:
                             date_str = r.get('date', '')[:10]
                             results.append(
-                                f"Source: {r.get('source')} ({date_str})\n"
+                                f"Publish Date: {date_str or 'Publication time unavailable'}\n"
+                                f"Source: {r.get('source') or 'Unknown Source'}\n"
                                 f"Title: {r.get('title')}\n"
+                                f"URL: {r.get('url') or r.get('href') or ''}\n"
                                 f"Snippet: {r.get('body')}\n"
                             )
                     except Exception:
@@ -67,6 +84,7 @@ class SearchService:
                         for r in web_results:
                             results.append(
                                 f"Title: {r.get('title')}\n"
+                                f"URL: {r.get('href') or r.get('url') or ''}\n"
                                 f"Snippet: {r.get('body')}\n"
                             )
             except Exception as e:

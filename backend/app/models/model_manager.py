@@ -96,7 +96,7 @@ class ModelManager:
             model=model_name,
             temperature=0.2
         )
-        latency = round(time.perf_counter() - start, 3)
+        latency = result.latency_seconds or round(time.perf_counter() - start, 3)
 
         tok_per_sec = None
         if result.token_count and latency > 0:

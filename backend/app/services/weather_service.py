@@ -1,5 +1,6 @@
 import httpx
 import logging
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +12,7 @@ class WeatherService:
         """
         lat, lon, city = None, None, None
         try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
+            async with httpx.AsyncClient(timeout=settings.WEATHER_TIMEOUT_SECONDS) as client:
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 }
@@ -78,34 +79,41 @@ class WeatherService:
                         current_data = wdata.get("current", {})
                         temp = current_data.get("temperature_2m")
                         code = current_data.get("weather_code", 0)
-                        
-                        # Convert code to description
-                        desc = "clear skies"
-                        if code in [1, 2, 3]:
-                            desc = "partly cloudy"
-                        elif code in [45, 48]:
-                            desc = "foggy"
-                        elif code in [51, 53, 55, 61, 63, 65, 80, 81, 82]:
-                            desc = "showers"
-                        elif code in [71, 73, 75, 77, 85, 86]:
-                            desc = "snowy"
-                        elif code in [95, 96, 99]:
-                            desc = "thunderstorms"
-                            
-                        return {
-                            "city": city,
-                            "temp": temp,
-                            "desc": desc,
-                            "success": True
-                        }
+                        if temp is not None:
+                            desc = "clear skies"
+                            if code in [1, 2, 3]:
+                                desc = "partly cloudy"
+                            elif code in [45, 48]:
+                                desc = "foggy"
+                            elif code in [51, 53, 55, 61, 63, 65, 80, 81, 82]:
+                                desc = "showers"
+                            elif code in [71, 73, 75, 77, 85, 86]:
+                                desc = "snowy"
+                            elif code in [95, 96, 99]:
+                                desc = "thunderstorms"
+
+                            return {
+                                "city": city,
+                                "temp": temp,
+                                "desc": desc,
+                                "success": True,
+                                "is_live": True,
+                                "location_available": True,
+                                "data_source": "live_open_meteo",
+                                "status_message": "Current weather retrieved from Open-Meteo."
+                            }
         except Exception as e:
             logger.error(f"Error fetching local weather: {e}")
             
         return {
             "city": city or "your area",
-            "temp": 24.0,
-            "desc": "clear conditions",
-            "success": False
+            "temp": None,
+            "desc": "unavailable",
+            "success": False,
+            "is_live": False,
+            "location_available": lat is not None and lon is not None and bool(city),
+            "data_source": "unavailable",
+            "status_message": "Live location or weather data could not be retrieved."
         }
 
 weather_service = WeatherService()

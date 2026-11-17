@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from app.services.worldmonitor_service import world_monitor_service
 
 router = APIRouter(prefix="/api/monitor", tags=["Monitor"])
@@ -19,9 +19,12 @@ class TelemetryData(BaseModel):
     last_updated: str
     recent_events: List[ConflictEvent]
     alternatives: List[Dict[str, str]]
+    fetched_at: Optional[str] = None
+    data_as_of: Optional[str] = None
     is_live: bool = False
-    data_source: str = "cached_offline_fallback"
-    status_message: str = "Operating in offline baseline mode."
+    is_stale: bool = False
+    data_source: str = "static_fallback_sample"
+    status_message: str = "Static sample data; not a current live reading."
 
 @router.get("/telemetry", response_model=TelemetryData)
 async def get_telemetry():
@@ -60,7 +63,10 @@ async def get_telemetry():
         last_updated=telemetry["last_updated"],
         recent_events=recent_events,
         alternatives=alternatives,
+        fetched_at=telemetry.get("fetched_at"),
+        data_as_of=telemetry.get("data_as_of"),
         is_live=telemetry.get("is_live", False),
+        is_stale=telemetry.get("is_stale", False),
         data_source=telemetry.get("data_source", "cached_offline_fallback"),
         status_message=telemetry.get("status_message", "Operating in offline baseline mode.")
     )

@@ -207,12 +207,17 @@ class OllamaService:
 
         if is_initial and is_greeting:
             weather = await weather_service.get_local_weather()
+            weather_summary = (
+                f"In {weather['city']} it is currently {weather['temp']} degrees Celsius with {weather['desc']}."
+                if weather.get("temp") is not None
+                else "Live local weather data is unavailable; do not infer current conditions."
+            )
             default_system = (
                 "You are FRIDAY (Female Real-time Intelligence Device & Assistant Yard), "
                 "a highly sophisticated AI assistant inspired by Tony Stark's assistant in Iron Man. "
                 "The user's name is Allen. You must greet him warmly by name as 'Allen', 'Boss', or 'Sir' in a soft, welcoming tone. "
                 f"Use this exact dynamic time-of-day greeting: '{time_greeting}' "
-                f"You must tell him that in {weather['city']} it is currently {weather['temp']} degrees Celsius with {weather['desc']}. "
+                f"{weather_summary} "
                 "After the weather introduction, answer his query concisely. Speak in a sleek, confident tone."
             )
         else:
@@ -366,6 +371,19 @@ class OllamaService:
         # Local weather/location
         if wants_local_info:
             weather = await weather_service.get_local_weather()
+            if weather.get("temp") is None:
+                city = weather.get("city", "your area")
+                if wants_location and weather.get("location_available"):
+                    response_text = f"Your approximate location is {city}, Sir. Live weather data is unavailable."
+                else:
+                    response_text = f"Live weather data is unavailable for {city}, Sir."
+                voice_service.speak(response_text)
+                return {
+                    "text": response_text,
+                    "trigger_dashboard": False,
+                    "error": weather.get("status_message", "Live weather data is unavailable.")
+                }
+
             local_info_context = (
                 f"User's Current Location: {weather['city']}\n"
                 f"User's Local Weather: {weather['temp']}°C, {weather['desc']}"

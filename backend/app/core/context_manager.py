@@ -39,6 +39,30 @@ class ContextManager:
                 "Keep replies direct, helpful, and concise."
             )
 
+    def format_history(self, history: Optional[List[Any]]) -> str:
+        if not history:
+            return ""
+
+        entries = []
+        for message in history[-8:]:
+            role = getattr(message, "role", None)
+            content = getattr(message, "content", None)
+            if isinstance(message, dict):
+                role = message.get("role")
+                content = message.get("content")
+            if role not in ("user", "friday", "assistant") or not isinstance(content, str):
+                continue
+            speaker = "User" if role == "user" else "Assistant"
+            entries.append(f"{speaker}: {content[:2000]}")
+
+        return "\n".join(entries)
+
+    def build_conversation_prompt(self, prompt: str, history: Optional[List[Any]]) -> str:
+        formatted_history = self.format_history(history)
+        if not formatted_history:
+            return prompt
+        return f"Recent conversation:\n{formatted_history}\n\nCurrent request:\n{prompt}"
+
     def build_synthesis_prompt(
         self,
         prompt: str,

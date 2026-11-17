@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Literal
 import logging
 from app.schemas.execution import ExecutionTrace
 from app.core.orchestrator import friday_orchestrator
@@ -10,17 +10,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["Chat"])
 
 class ChatMessage(BaseModel):
-    role: str
-    content: str
+    role: Literal["user", "friday", "assistant"]
+    content: str = Field(..., max_length=4000)
 
 class ChatRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=4000, description="User prompt text")
-    history: Optional[List[ChatMessage]] = Field(default=None, description="Prior conversation history")
+    history: Optional[List[ChatMessage]] = Field(
+        default=None,
+        max_length=20,
+        description="Prior conversation history"
+    )
 
 class ChatResponse(BaseModel):
     response: str
     trigger_dashboard: bool
     execution_trace: Optional[ExecutionTrace] = None
+    sources: List[Dict[str, Any]] = Field(default_factory=list)
     error: Optional[str] = None
 
 @router.post("", response_model=ChatResponse)
@@ -35,13 +40,12 @@ async def chat_endpoint(request: ChatRequest):
             response=agent_res.response,
             trigger_dashboard=agent_res.trigger_dashboard,
             execution_trace=agent_res.execution_trace,
+            sources=agent_res.sources,
             error=agent_res.error
         )
     except Exception as e:
         logger.error(f"Unexpected error handling chat endpoint: {e}", exc_info=True)
-        return ChatResponse(
-            response="An unexpected internal error occurred while processing your request.",
-            trigger_dashboard=False,
-            execution_trace=None,
-            error=str(e)
-        )
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected internal error occurred while processing your request."
+        ) from e

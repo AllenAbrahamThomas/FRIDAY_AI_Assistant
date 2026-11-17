@@ -2,8 +2,8 @@ import time
 import uuid
 import datetime
 import logging
-from typing import Dict, Any, List, Optional
-from app.schemas.execution import ExecutionTrace, IntentResult, ExecutionPlan, PlanStep
+from typing import Any, Dict, List
+from app.schemas.execution import ExecutionTrace, ExecutionPlan
 from app.schemas.agent import AgentResponse
 from app.core.intent_classifier import intent_classifier
 from app.core.planner import task_planner
@@ -11,6 +11,8 @@ from app.core.execution_engine import execution_engine
 from app.core.context_manager import context_manager
 from app.models.model_manager import model_manager
 from app.services.voice_service import voice_service
+from app.agents.research_agent import research_agent
+from app.agents.intelligence_agent import intelligence_agent
 
 logger = logging.getLogger(__name__)
 
@@ -21,155 +23,182 @@ class FRIDAYOrchestrator:
     ordered task planning, tool execution, model selection & synthesis, and execution tracing.
     """
 
+    def __init__(self):
+        self.agents = {
+            "research": research_agent,
+            "world_intelligence": intelligence_agent
+        }
+
     async def process_request(self, prompt: str, history: List[Any] = None) -> AgentResponse:
         start_time = time.perf_counter()
         trace_id = f"trc-{uuid.uuid4().hex[:8]}"
         created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         warnings: List[str] = []
         sources_used: List[str] = []
+        response_sources: List[Dict[str, Any]] = []
         trigger_dashboard = False
         error_msg = None
+        agent_used = None
+        model_latency_seconds = None
 
         logger.info(f"[{trace_id}] Received user request: '{prompt[:80]}...'")
 
-        # 1. Intent Classification
         intent = intent_classifier.classify(prompt)
         logger.info(f"[{trace_id}] Detected intent: {intent.intent} (confidence: {intent.confidence})")
 
-        # 2. Task Planning
         plan = task_planner.create_plan(prompt, intent)
         logger.info(f"[{trace_id}] Formulated plan with {len(plan.steps)} steps.")
+        conversation_prompt = context_manager.build_conversation_prompt(prompt, history)
+        conversation_history = context_manager.format_history(history)
 
-        # 3. Tool Execution
         observations, step_warnings = await execution_engine.execute_plan(plan)
         warnings.extend(step_warnings)
-
-        # 4. Result Synthesis with Model Manager
-        final_response_text = ""
-        synthesis_step = next((s for s in plan.steps if s.tool_name is None), None)
         model_used = model_manager.select_model_for_task(intent.intent)
+        final_response_text = ""
 
-        if intent.intent == "world_intelligence":
-            trigger_dashboard = True
-            sources_used.append("World Monitor Telemetry Feed")
-            sources_used.append("World Monitor Global News")
+        agent = self.agents.get(intent.intent)
+        if agent:
+            agent_used = agent.name
+            trigger_dashboard = intent.intent == "world_intelligence"
+            research_result = None
+            if intent.intent == "world_intelligence":
+                research_observations = [
+                    {
+                        **observation,
+                        "step_number": index
+                    }
+                    for index, observation in enumerate(
+                        (
+                            item for item in observations
+                            if item.get("tool_name") == "web_search"
+                        ),
+                        start=1
+                    )
+                ]
+                if research_observations:
+                    research_result = await research_agent.run(
+                        prompt,
+                        context={
+                            "observations": research_observations,
+                            "optimized_query": prompt,
+                            "skip_synthesis": True
+                        }
+                    )
 
-            wm_prompt = context_manager.build_synthesis_prompt(prompt, observations, intent.intent)
-            wm_system_prompt = (
-                "You are FRIDAY (Female Real-time Intelligence Device & Assistant Yard), "
-                "a highly sophisticated AI assistant inspired by Tony Stark's assistant in Iron Man. "
-                "The user's name is Allen. Address him as Boss, Sir, or Allen.\n"
-                "Follow this exact response format:\n"
-                "1. Start with an acknowledgement: 'Give me a sec, Boss. Let me check.'\n"
-                "2. Provide a short, sleek, conversational paragraph summarizing the provided World Monitor telemetry index and hotzones.\n"
-                "3. Present the latest world news headlines from the provided News Feed context. "
-                "For each news item, you MUST include the news channel source name and the publish date/time in a natural, conversational way.\n"
-                "4. End the response with: 'Let me open up the world monitor so you can better visualize what's happening, Boss.'\n"
-                "Do not use markdown bullet lists; write in smooth, conversational paragraphs or clean formatted inline items. "
-                "Reflect a professional, confident tone."
+            optimized_query = (
+                plan.steps[0].tool_input.get("query", prompt)
+                if intent.intent == "research" and plan.steps
+                else prompt
             )
-            gen_res = await model_manager.generate(
-                prompt=wm_prompt,
-                system_prompt=wm_system_prompt,
-                task_intent=intent.intent
+            agent_result = await agent.run(
+                prompt,
+                context={
+                    "intent": intent.model_dump(),
+                    "observations": observations,
+                    "conversation_history": conversation_history,
+                    "optimized_query": optimized_query,
+                    "research_result": research_result
+                }
             )
-            final_response_text = gen_res.text
-            model_used = gen_res.model or model_used
-
-            if not final_response_text:
-                context_str = observations[0]["data"].get("summary_context", "") if observations else ""
-                news_str = observations[1]["data"].get("news_context", "") if len(observations) > 1 else ""
-                final_response_text = (
-                    "Give me a sec, Boss. Let me check.\n\n"
-                    f"Here is the telemetry context, Sir:\n{context_str}\n\n"
-                    f"Latest World News Feed:\n{news_str}\n\n"
-                    "Let me open up the world monitor so you can better visualize what's happening, Boss."
-                )
-                error_msg = gen_res.error or f"Ollama connection offline or model '{model_used}' unavailable"
-
-        elif intent.intent == "research":
-            sources_used.append("Google News RSS Search")
-            sources_used.append("DuckDuckGo OSINT / Web")
-
-            research_prompt = context_manager.build_synthesis_prompt(prompt, observations, intent.intent)
-            research_system = (
-                "You are FRIDAY (Female Real-time Intelligence Device & Assistant Yard), "
-                "a highly sophisticated AI assistant inspired by Tony Stark's assistant in Iron Man. "
-                "Analyze the provided search observations and user request: "
-                "1. Verify key facts across the observations. "
-                "2. Distinguish confirmed facts from speculation. "
-                "3. Present a clear, well-supported, evidence-grounded answer. "
-                "4. Address the user as Allen or Sir in a sleek, confident, professional tone."
+            final_response_text = agent_result.response_text
+            model_used = agent_result.metadata.get("model_used") or model_used
+            model_latency_seconds = agent_result.metadata.get("model_latency_seconds")
+            warnings.extend(agent_result.warnings)
+            sources_used.extend(agent_result.metadata.get("sources_used", []))
+            response_sources = agent_result.metadata.get("sources", [])
+            self._update_agent_steps(
+                plan,
+                agent_result.success,
+                agent_result.metadata,
+                agent_result.warnings,
+                agent_result.duration_seconds
             )
-            gen_res = await model_manager.generate(
-                prompt=research_prompt,
-                system_prompt=research_system,
-                task_intent=intent.intent
-            )
-            final_response_text = gen_res.text
-            model_used = gen_res.model or model_used
 
-            if not final_response_text:
-                obs_text = str(observations[0]["data"]) if observations else "No search context available."
-                final_response_text = f"I retrieved these news items regarding your query, Sir: {obs_text}"
-                error_msg = gen_res.error or f"Ollama connection offline or model '{model_used}' unavailable"
+            if not agent_result.success:
+                error_msg = agent_result.warnings[0] if agent_result.warnings else "Research agent failed"
 
         elif intent.intent == "weather":
-            weather_data = observations[0].get("data") if observations else {}
-            city = weather_data.get("city", "Local Sensor")
-            temp = weather_data.get("temp", "--")
-            desc = weather_data.get("desc", "Clear")
-            sources_used.append(f"Open-Meteo & Geolocation ({city})")
-
-            local_info_context = f"User Location: {city}\nCurrent Weather: {temp}°C, {desc}"
-            weather_sys = context_manager.build_system_prompt()
-            gen_res = await model_manager.generate(
-                prompt=f"Local Context:\n{local_info_context}\n\nUser request: {prompt}",
-                system_prompt=weather_sys,
-                task_intent=intent.intent
+            observation = next(
+                (item for item in observations if item.get("tool_name") == "weather_and_location"),
+                {}
             )
-            final_response_text = gen_res.text
-            model_used = gen_res.model or model_used
+            weather_data = observation.get("data") or {}
+            city = weather_data.get("city", "your area")
+            temp = weather_data.get("temp")
+            desc = weather_data.get("desc", "unavailable")
 
-            if not final_response_text:
-                final_response_text = (
-                    f"Telemetry sensor check: Location detected as {city}. "
-                    f"Current temperature is {temp}°C with {desc}."
+            if not weather_data.get("success") or temp is None:
+                status_message = weather_data.get(
+                    "status_message",
+                    "Live weather data is unavailable."
                 )
-                error_msg = gen_res.error or f"Ollama connection offline or model '{model_used}' unavailable"
+                asks_location = any(term in prompt.lower() for term in ("where am i", "what city", "my location"))
+                if asks_location and weather_data.get("location_available"):
+                    final_response_text = (
+                        f"Your approximate location is {city}, Sir. "
+                        "I couldn't retrieve current weather data."
+                    )
+                else:
+                    final_response_text = f"I couldn't retrieve live weather data for {city}, Sir."
+                warnings.append(status_message)
+                error_msg = status_message
+            else:
+                sources_used.append(f"Open-Meteo & Geolocation ({city})")
+                local_info_context = f"User Location: {city}\nCurrent Weather: {temp}°C, {desc}"
+                weather_sys = context_manager.build_system_prompt()
+                gen_res = await model_manager.generate(
+                    prompt=f"Local Context:\n{local_info_context}\n\n{conversation_prompt}",
+                    system_prompt=weather_sys,
+                    task_intent=intent.intent
+                )
+                final_response_text = gen_res.text
+                model_used = gen_res.model or model_used
+                model_latency_seconds = gen_res.latency_seconds
+
+                if not final_response_text:
+                    final_response_text = (
+                        f"Telemetry sensor check: Location detected as {city}. "
+                        f"Current temperature is {temp}°C with {desc}."
+                    )
+                    error_msg = gen_res.error or f"Ollama connection offline or model '{model_used}' unavailable"
+                    warnings.append(error_msg)
 
         elif intent.intent == "greeting":
             greet_sys = context_manager.build_system_prompt(is_initial=True, is_greeting=True)
             gen_res = await model_manager.generate(
-                prompt=prompt,
+                prompt=conversation_prompt,
                 system_prompt=greet_sys,
                 task_intent=intent.intent
             )
             final_response_text = gen_res.text
             model_used = gen_res.model or model_used
+            model_latency_seconds = gen_res.latency_seconds
             if not final_response_text:
                 final_response_text = f"Hello Allen. {context_manager.get_time_greeting()} How can I assist you today, Sir?"
+            if not gen_res.success:
+                error_msg = gen_res.error or "Model generation failed."
+                warnings.append(error_msg)
 
         else:
-            # Coding or general task
             gen_sys = context_manager.build_system_prompt()
             gen_res = await model_manager.generate(
-                prompt=prompt,
+                prompt=conversation_prompt,
                 system_prompt=gen_sys,
                 task_intent=intent.intent
             )
             final_response_text = gen_res.text
             model_used = gen_res.model or model_used
+            model_latency_seconds = gen_res.latency_seconds
             if not final_response_text:
                 final_response_text = (
                     f"Diagnostic mode active, Allen. Core LLM engine is currently delayed. "
                     "Subsystems are functional."
                 )
                 error_msg = gen_res.error or f"Ollama connection offline or model '{model_used}' unavailable"
+                warnings.append(error_msg)
 
-        if synthesis_step:
-            synthesis_step.status = "completed"
-            synthesis_step.duration_seconds = round(time.perf_counter() - start_time, 3)
+        if not agent:
+            self._mark_direct_steps(plan, final_response_text, error_msg)
 
         # Trigger voice synthesis in background thread
         voice_service.speak(final_response_text)
@@ -181,9 +210,11 @@ class FRIDAYOrchestrator:
             trace_id=trace_id,
             user_prompt=prompt,
             intent=intent,
+            agent_used=agent_used,
             plan=plan,
             steps_executed=plan.steps,
             total_duration_seconds=total_duration,
+            model_latency_seconds=model_latency_seconds,
             model_used=model_used,
             sources_used=sources_used,
             warnings=warnings,
@@ -196,7 +227,45 @@ class FRIDAYOrchestrator:
             response=final_response_text,
             trigger_dashboard=trigger_dashboard,
             execution_trace=trace,
+            sources=response_sources,
             error=error_msg
         )
+
+    @staticmethod
+    def _update_agent_steps(
+        plan: ExecutionPlan,
+        agent_success: bool,
+        metadata: Dict[str, Any],
+        agent_warnings: List[str],
+        agent_duration_seconds: float
+    ) -> None:
+        for step in plan.steps:
+            if step.tool_name:
+                continue
+            if step.tool_input.get("operation") == "evidence_pipeline":
+                processed = metadata.get("evidence_processed", agent_success)
+                step.status = "completed" if processed else "failed"
+                if not processed and agent_warnings:
+                    step.error = agent_warnings[0]
+            elif metadata.get("synthesis_completed"):
+                step.status = "completed"
+                step.duration_seconds = agent_duration_seconds
+            elif metadata.get("synthesis_skipped"):
+                step.status = "skipped"
+                step.observation = "Synthesis skipped because usable source data was unavailable."
+            else:
+                step.status = "failed"
+                step.error = agent_warnings[0] if agent_warnings else "Agent synthesis failed."
+
+    @staticmethod
+    def _mark_direct_steps(plan: ExecutionPlan, response: str, error: str = None) -> None:
+        for step in plan.steps:
+            if step.tool_name:
+                continue
+            step.status = "completed" if response else "failed"
+            if error:
+                step.observation = f"Completed with warning: {error}"
+            if step.status == "failed":
+                step.error = error or "No response was generated."
 
 friday_orchestrator = FRIDAYOrchestrator()

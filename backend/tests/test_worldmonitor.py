@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.services.worldmonitor_service import WorldMonitorService, COUNTRY_NAMES
+from app.tools.registry import WorldMonitorTelemetryTool, WorldNewsFeedTool
 
 @pytest.fixture
 def mock_risk_scores_response():
@@ -83,7 +84,10 @@ async def test_get_telemetry_success(mock_risk_scores_response):
         
         assert telemetry["global_risk_index"] == 66.0
         assert telemetry["active_conflicts"] == 2
-        assert telemetry["last_updated"] == "Live"
+        assert telemetry["is_live"] is True
+        assert telemetry["is_stale"] is False
+        assert telemetry["data_as_of"] is not None
+        assert telemetry["fetched_at"] is not None
         
         recent_events = telemetry["recent_events"]
         assert len(recent_events) == 2
@@ -92,8 +96,42 @@ async def test_get_telemetry_success(mock_risk_scores_response):
         ua_event = next(e for e in recent_events if e["region"] == "Ukraine")
         assert ua_event["severity"] == "High"  # score 74.0 is >= 65 and < 75
         assert "Stability index evaluated at 74.0" in ua_event["description"]
+        assert ua_event["risk_score"] == 74.0
+        assert ua_event["source"] == "World Monitor"
+        assert ua_event["is_live"] is True
+        assert ua_event["data_as_of"] is not None
         assert "do-not-travel" in ua_event["description"]
         assert "militaryActivity" not in ua_event["description"] # lowercase components shouldn't be printed directly
+
+@pytest.mark.asyncio
+async def test_get_telemetry_handles_missing_region_code(mock_risk_scores_response):
+    response = {
+        **mock_risk_scores_response,
+        "ciiScores": [{
+            "region": None,
+            "combinedScore": 47.5,
+            "computedAt": 1781240199451,
+            "trend": "TREND_DIRECTION_STABLE"
+        }]
+    }
+    service = WorldMonitorService()
+    with patch.object(service, "get_raw_risk_scores", return_value=response):
+        telemetry = await service.get_telemetry()
+
+    event = telemetry["recent_events"][0]
+    assert event["region"] == "Unknown region"
+    assert event["region_code"] is None
+    assert event["id"] == "evt-unknown-0"
+
+@pytest.mark.asyncio
+async def test_get_telemetry_marks_stale_live_source(mock_risk_scores_response):
+    stale_response = {**mock_risk_scores_response, "stale": True}
+    service = WorldMonitorService()
+    with patch.object(service, "get_raw_risk_scores", return_value=stale_response):
+        telemetry = await service.get_telemetry()
+    assert telemetry["is_live"] is True
+    assert telemetry["is_stale"] is True
+    assert "stale data" in telemetry["status_message"]
 
 @pytest.mark.asyncio
 async def test_get_telemetry_fallback():
@@ -104,7 +142,11 @@ async def test_get_telemetry_fallback():
         
         assert telemetry["global_risk_index"] == 72.4
         assert telemetry["active_conflicts"] == 14
-        assert "Fallback" in telemetry["last_updated"]
+        assert telemetry["is_live"] is False
+        assert telemetry["is_stale"] is True
+        assert telemetry["data_source"] == "static_fallback_sample"
+        assert "not live" in telemetry["last_updated"]
+        assert telemetry["data_as_of"] is None
         assert len(telemetry["recent_events"]) == 3
 
 @pytest.mark.asyncio
@@ -129,8 +171,12 @@ async def test_get_world_news_fallback():
         assert news[0]["source"] == "BBC World"
         assert "Oil prices slide" in news[0]["title"]
         assert news[0]["isAlert"] is True
+        assert news[0]["is_live"] is False
+        assert news[0]["data_source"] == "static_fallback_sample"
+        assert news[0]["publishedAt"] is None
         assert news[2]["source"] == "BBC World"
         assert news[2]["isAlert"] is False
+        assert "STATIC SAMPLE — NOT LIVE" in await service.get_world_news_context()
 
 @pytest.mark.asyncio
 async def test_get_world_news_success():
@@ -165,6 +211,7 @@ async def test_get_world_news_success():
             assert news[0]["source"] == "Al Jazeera"
             assert news[0]["title"] == "Tensions ease in regional borders"
             assert news[0]["isAlert"] is True
+            assert news[0]["published_at"] is not None
 
 @pytest.mark.asyncio
 async def test_get_world_news_context():
@@ -202,7 +249,40 @@ async def test_get_world_news_context():
         assert "2 hours ago" in context
         assert "5 hours ago" in context
         assert "BBC News" in context
+        assert "https://bbc.com/gold" in context
+        assert "Published at (UTC):" in context
+        assert "Data Source: unknown" in context
         assert "Gold spikes higher" in context
         assert "[ALERT]" in context
         assert "AP News" in context
         assert "Ceasefire talks resume" in context
+
+@pytest.mark.asyncio
+async def test_world_monitor_tool_formats_the_fetched_snapshot_once():
+    telemetry = {"global_risk_index": 61.0}
+    with patch(
+        "app.tools.registry.world_monitor_service.get_telemetry",
+        AsyncMock(return_value=telemetry)
+    ) as get_telemetry, patch(
+        "app.tools.registry.world_monitor_service.get_world_summary_context",
+        AsyncMock(return_value="Risk: 61")
+    ) as get_context:
+        result = await WorldMonitorTelemetryTool().run()
+    get_telemetry.assert_awaited_once()
+    get_context.assert_awaited_once_with(telemetry)
+    assert result["success"] is True
+
+@pytest.mark.asyncio
+async def test_world_news_tool_formats_the_fetched_snapshot_once():
+    news = [{"title": "Sample", "is_live": False}]
+    with patch(
+        "app.tools.registry.world_monitor_service.get_world_news",
+        AsyncMock(return_value=news)
+    ) as get_news, patch(
+        "app.tools.registry.world_monitor_service.get_world_news_context",
+        AsyncMock(return_value="Static sample")
+    ) as get_context:
+        result = await WorldNewsFeedTool().run()
+    get_news.assert_awaited_once()
+    get_context.assert_awaited_once_with(news)
+    assert result["success"] is True

@@ -1,9 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Send, Terminal, Cpu, ShieldAlert, Globe, Compass, 
-  RefreshCw, MessageSquare, Radio, HelpCircle, Activity, CheckCircle, AlertTriangle 
+import {
+  Send, Terminal, Cpu, ShieldAlert, Globe, Compass,
+  RefreshCw, MessageSquare, Radio, HelpCircle, Activity, CheckCircle, AlertTriangle
 } from 'lucide-react';
 import WorldMonitorPopup from './components/WorldMonitorPopup';
+
+const renderMarkdownLite = (value) => {
+  let html = String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[char]));
+
+  html = html.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+  );
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  return html.replace(/\n/g, '<br />');
+};
 
 const getInitialGreeting = () => {
   const hour = new Date().getHours();
@@ -35,7 +53,7 @@ function App() {
   const [availableModels, setAvailableModels] = useState([]);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [openTraces, setOpenTraces] = useState({});
-  
+
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -114,10 +132,11 @@ function App() {
         global_risk_index: 72.4,
         active_conflicts: 14,
         economic_stability_score: 54.8,
-        last_updated: "Offline mode",
+        last_updated: "Static fallback sample (not live)",
         is_live: false,
-        data_source: "cached_offline_fallback",
-        status_message: "Local API unreachable; using cached baseline.",
+        is_stale: true,
+        data_source: "static_fallback_sample",
+        status_message: "Local API unreachable; displaying static sample data, not a current reading.",
         recent_events: [
           { id: "e1", region: "Eastern Europe", severity: "Critical", description: "Geopolitical shifts impacting borders.", source: "Local Alert" }
         ],
@@ -146,26 +165,26 @@ function App() {
 
       if (response.ok) {
         const data = await response.json();
-        setMessages(prev => [...prev, { 
-          role: 'friday', 
+        setMessages(prev => [...prev, {
+          role: 'friday',
           content: data.response,
-          trace: data.execution_trace 
+          trace: data.execution_trace
         }]);
         if (data.trigger_dashboard) {
           setIsPopupOpen(true);
           window.open('https://www.worldmonitor.app/', '_blank');
         }
       } else {
-        setMessages(prev => [...prev, { 
-          role: 'friday', 
+        setMessages(prev => [...prev, {
+          role: 'friday',
           content: 'F.R.I.D.A.Y. Warning: I experienced an issue communicating with my backend matrix interface.',
           trace: null
         }]);
       }
     } catch (err) {
       console.error(err);
-      setMessages(prev => [...prev, { 
-        role: 'friday', 
+      setMessages(prev => [...prev, {
+        role: 'friday',
         content: 'F.R.I.D.A.Y. Diagnostic: Local API server is unreachable. Please make sure the FastAPI backend is running on port 8000.',
         trace: null
       }]);
@@ -193,8 +212,8 @@ function App() {
           <div className="telemetry-row" style={{ alignItems: 'center' }}>
             <span className="telemetry-label">Active Model:</span>
             {availableModels.length > 0 ? (
-              <select 
-                value={health?.active_model || 'llama3.2'} 
+              <select
+                value={health?.active_model || 'llama3.2'}
                 onChange={handleModelChange}
                 className="model-select-dropdown"
               >
@@ -235,8 +254,13 @@ function App() {
             </div>
             <div className="telemetry-row">
               <span className="telemetry-label">Data Source:</span>
-              <span className={`telemetry-badge ${telemetry.is_live ? 'live' : 'cached'}`}>
-                {telemetry.is_live ? 'LIVE API' : 'CACHED BASELINE'}
+              <span
+                className={`telemetry-badge ${telemetry.is_live ? 'live' : 'cached'}`}
+                title={telemetry.status_message}
+              >
+                {telemetry.is_live
+                  ? telemetry.is_stale ? 'STALE LIVE API' : 'LIVE API'
+                  : telemetry.data_source === 'static_fallback_sample' ? 'SAMPLE DATA' : 'OFFLINE'}
               </span>
             </div>
             <div className="telemetry-row">
@@ -250,8 +274,8 @@ function App() {
               <span className="telemetry-value">{telemetry.active_conflicts}</span>
             </div>
             <div style={{ marginTop: '10px' }}>
-              <button 
-                className="fallback-btn" 
+              <button
+                className="fallback-btn"
                 style={{ width: '100%', padding: '6px', fontSize: '0.8rem' }}
                 onClick={() => setIsPopupOpen(true)}
               >
@@ -285,11 +309,11 @@ function App() {
             <span>Alternatives Hub</span>
           </div>
           {telemetry?.alternatives?.map((alt, i) => (
-            <a 
-              key={i} 
-              href={alt.url} 
-              target="_blank" 
-              rel="noopener noreferrer" 
+            <a
+              key={i}
+              href={alt.url}
+              target="_blank"
+              rel="noopener noreferrer"
               className="alternative-link"
               title={alt.desc}
             >
@@ -304,8 +328,8 @@ function App() {
         {/* Top Control Bar */}
         <header className="top-nav">
           <div className="top-nav-title">MISSION CONTROL INTERFACE</div>
-          <button 
-            className="fallback-btn" 
+          <button
+            className="fallback-btn"
             style={{ padding: '6px 14px', fontSize: '0.8rem' }}
             onClick={refreshAll}
           >
@@ -328,18 +352,18 @@ function App() {
               <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '0.75rem', textTransform: 'uppercase' }}>
                 {msg.role === 'friday' ? 'Friday Assistant' : 'Tony'}
               </div>
-              <div>{msg.content}</div>
+              <div dangerouslySetInnerHTML={{ __html: renderMarkdownLite(msg.content) }} />
 
               {/* Collapsible Agent Execution Trace */}
               {msg.trace && (
                 <div className="trace-box">
-                  <div 
-                    className="trace-header" 
+                  <div
+                    className="trace-header"
                     onClick={() => toggleTrace(index)}
                     style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
                   >
                     <span className="trace-summary">
-                      ⚡ AGENT TRACE: {msg.trace.intent?.intent?.toUpperCase()} ({msg.trace.steps_executed?.length} steps, {msg.trace.total_duration_seconds}s, model: {msg.trace.model_used})
+                    ⚡ AGENT TRACE: {msg.trace.agent_used?.toUpperCase() || 'DIRECT'} · {msg.trace.intent?.intent?.toUpperCase()} ({msg.trace.steps_executed?.length} steps, {msg.trace.total_duration_seconds}s total, {msg.trace.model_latency_seconds ?? 'N/A'}s model, model: {msg.trace.model_used})
                     </span>
                     <span style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)' }}>
                       {openTraces[index] ? '▲ HIDE PLAN' : '▼ VIEW PLAN'}

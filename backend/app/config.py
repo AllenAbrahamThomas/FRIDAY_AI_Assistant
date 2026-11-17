@@ -1,6 +1,9 @@
 import os
+import logging
 from pathlib import Path
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 def _load_env_file():
     """
@@ -26,8 +29,8 @@ def _load_env_file():
                         if k and k not in os.environ:
                             os.environ[k] = v
                 break
-            except Exception:
-                pass
+            except OSError as exc:
+                logger.warning("Unable to read environment file %s: %s", path, exc)
 
 _load_env_file()
 
@@ -39,7 +42,7 @@ class Settings:
     # CORS origins as a list
     _cors_raw: str = os.getenv(
         "CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
+        "http://localhost:5173,http://127.0.0.1:5173"
     )
     CORS_ORIGINS: List[str] = [origin.strip() for origin in _cors_raw.split(",") if origin.strip()]
 
@@ -52,6 +55,9 @@ class Settings:
     # External APIs
     WORLD_MONITOR_API_KEY: str = os.getenv("WORLD_MONITOR_API_KEY", "")
     WORLD_MONITOR_TIMEOUT_SECONDS: float = float(os.getenv("WORLD_MONITOR_TIMEOUT_SECONDS", "8.0"))
+    WORLD_MONITOR_RETRY_COUNT: int = int(os.getenv("WORLD_MONITOR_RETRY_COUNT", "1"))
+    SEARCH_TIMEOUT_SECONDS: float = float(os.getenv("SEARCH_TIMEOUT_SECONDS", "8.0"))
+    WEATHER_TIMEOUT_SECONDS: float = float(os.getenv("WEATHER_TIMEOUT_SECONDS", "8.0"))
     NEWS_API_KEY: str = os.getenv("NEWS_API_KEY", "")
 
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")

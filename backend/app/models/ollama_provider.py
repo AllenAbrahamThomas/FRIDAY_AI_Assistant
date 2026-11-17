@@ -8,6 +8,9 @@ from app.models.base_provider import BaseModelProvider, ModelInfo, ModelGenerati
 
 logger = logging.getLogger(__name__)
 
+class OllamaProviderError(RuntimeError):
+    pass
+
 class OllamaProvider(BaseModelProvider):
     def __init__(self, base_url: Optional[str] = None, default_model: Optional[str] = None):
         super().__init__(name="ollama")
@@ -101,44 +104,63 @@ class OllamaProvider(BaseModelProvider):
         )
 
     async def list_models(self) -> List[ModelInfo]:
+        async with self._get_client(timeout=5.0) as client:
+            response = await client.get(f"{self.base_url}/api/tags")
+        if response.status_code != 200:
+            raise OllamaProviderError(f"Ollama returned HTTP {response.status_code} while listing models")
+
         try:
-            async with self._get_client(timeout=5.0) as client:
-                res = await client.get(f"{self.base_url}/api/tags")
-                if res.status_code == 200:
-                    data = res.json()
-                    models: List[ModelInfo] = []
-                    for item in data.get("models", []):
-                        raw_size = item.get("size", 0)
-                        size_gb = round(raw_size / (1024 ** 3), 2)
-                        details = item.get("details", {})
-                        models.append(ModelInfo(
-                            name=item.get("name", ""),
-                            model_id=item.get("model", item.get("name", "")),
-                            parameter_size=details.get("parameter_size", "Unknown"),
-                            size_gb=size_gb,
-                            family=details.get("family", "Unknown"),
-                            capabilities=item.get("capabilities", ["completion"])
-                        ))
-                    return models
-        except Exception as e:
-            logger.error(f"Error listing Ollama models: {e}")
-        return []
+            data = response.json()
+        except ValueError as exc:
+            raise OllamaProviderError("Ollama returned invalid JSON while listing models") from exc
+
+        models: List[ModelInfo] = []
+        for item in data.get("models", []):
+            name = item.get("name")
+            if not name:
+                logger.warning("Ignoring Ollama model entry without a name")
+                continue
+            raw_size = item.get("size", 0)
+            details = item.get("details", {})
+            models.append(ModelInfo(
+                name=name,
+                model_id=item.get("model") or name,
+                parameter_size=details.get("parameter_size", "Unknown"),
+                size_gb=round(raw_size / (1024 ** 3), 2),
+                family=details.get("family", "Unknown"),
+                capabilities=item.get("capabilities", ["completion"])
+            ))
+        return models
 
     async def check_health(self) -> ProviderHealth:
         try:
-            models = await self.list_models()
-            model_names = [m.name for m in models]
+            async with self._get_client(timeout=5.0) as client:
+                response = await client.get(f"{self.base_url}/api/tags")
+            if response.status_code != 200:
+                return ProviderHealth(
+                    connected=False,
+                    provider_name=self.name,
+                    base_url=self.base_url,
+                    error=f"Ollama returned HTTP {response.status_code}"
+                )
+
+            model_names = [
+                item.get("name", "")
+                for item in response.json().get("models", [])
+                if item.get("name")
+            ]
             return ProviderHealth(
-                connected=len(models) > 0 or True,
-                provider_name="ollama",
+                connected=True,
+                provider_name=self.name,
                 base_url=self.base_url,
                 available_models=model_names,
                 error=None
             )
         except Exception as e:
+            logger.warning("Ollama health check failed: %s", e)
             return ProviderHealth(
                 connected=False,
-                provider_name="ollama",
+                provider_name=self.name,
                 base_url=self.base_url,
                 available_models=[],
                 error=str(e)

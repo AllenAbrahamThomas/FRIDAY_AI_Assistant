@@ -1,15 +1,18 @@
 # F.R.I.D.A.Y. Geopolitical Intelligence & Threat Matrix Assistant
 
-F.R.I.D.A.Y. (Female Real-Time Intelligence Device & Assistant Yard) is an Iron Man-inspired AI assistant console. It uses local LLMs (Llama 3.2 via Ollama) integrated with real-time geopolitical threat telemetry from the World Monitor API, live news feeds, and search verification/self-correction pipelines.
+F.R.I.D.A.Y. (Female Real-Time Intelligence Device & Assistant Yard) is a local-first AI assistant built with FastAPI, React, and Ollama. It includes a request orchestrator, model selection, World Monitor telemetry, web/news search, and per-request execution traces. External feeds may be unavailable; the UI and API mark static fallback data as samples rather than live readings.
 
 ---
 
 ## 🚀 Key Features
 
-*   **Geopolitical Threat Matrix Routing:** Automatically detects queries about world situations, reads country threat levels and components (military, economic, news, and infrastructure index), and projects a live interactive dashboard map.
-*   **Search Verification & Self-Correction Agent:** For general reasoning tasks, the agent drafts a response, queries web searches to verify facts/data, and self-corrects any hallucinations or outdated facts before outputting.
+*   **Geopolitical Threat Matrix Routing:** Routes situation queries to World Monitor risk telemetry and news.
+*   **World Intelligence Briefings:** Combines region-filtered World Monitor indicators, news, and supplemental research with timestamps, source links, freshness labels, and a distinct analysis section.
+*   **Research Agent:** Searches news/web sources and prepares evidence-grounded responses with clickable citations. Search snippets are treated as unverified claims; full article text is not currently retrieved.
+*   **Model Manager:** Lists available Ollama models, supports model selection, and exposes a benchmark endpoint.
+*   **Execution Traces:** Chat responses include the request intent, selected agent, plan, step status, duration, model, and source labels.
 *   **Real-time Time-of-Day Greetings:** Adapts conversational greetings dynamically in both backend prompt contexts and frontend interface depending on local browser clock times.
-*   **Integrated Live Feeds:** Pulls real-time articles directly from the World Monitor API, calculating dynamic relative times (e.g. "2 hours ago") and alert indicators.
+*   **Live and Fallback Status:** World Monitor data reports whether it is live; static fallback samples are labeled and do not claim current publication times.
 
 ---
 
@@ -21,8 +24,15 @@ The system reads settings dynamically via environment variables or falls back to
 | :--- | :--- | :--- |
 | `OLLAMA_BASE_URL` | The endpoint url for your local Ollama server | `http://localhost:11434` |
 | `OLLAMA_MODEL` | The LLM model to be used by the agent | `llama3.2` |
-| `NEWS_API_KEY` | Optional API key for Google News feeds | (none, falls back to web scraping) |
-| `WORLD_MONITOR_API_KEY` | Optional key to query the World Monitor REST feeds API | (none, falls back to mock dashboard data) |
+| `OLLAMA_TIMEOUT_SECONDS` | Inference timeout | `60.0` |
+| `OLLAMA_RETRY_COUNT` | Retry count for transient inference failures | `2` |
+| `CORS_ORIGINS` | Comma-separated frontend origins | `http://localhost:5173,http://127.0.0.1:5173` |
+| `NEWS_API_KEY` | Reserved; current Google News RSS integration does not use this key | (unused) |
+| `WORLD_MONITOR_API_KEY` | Optional key for World Monitor REST feeds | (none; displays labeled static sample data) |
+| `WORLD_MONITOR_TIMEOUT_SECONDS` | World Monitor request timeout | `8.0` |
+| `WORLD_MONITOR_RETRY_COUNT` | Retry count for transient risk-feed failures | `1` |
+| `SEARCH_TIMEOUT_SECONDS` | News/search request timeout | `8.0` |
+| `WEATHER_TIMEOUT_SECONDS` | Location/weather request timeout | `8.0` |
 
 ---
 
@@ -35,10 +45,13 @@ The system reads settings dynamically via environment variables or falls back to
     ollama pull llama3.2
     ```
 
+### Configuration
+From the repository root, copy `.env.example` to `.env` and adjust values if needed. The example contains no credentials. Keep real API keys in the local `.env` file and do not commit it.
+
 ### Running the Backend (FastAPI)
 1.  Navigate to the project directory:
     ```bash
-    cd g:/FRIDAY_AI_Assistant
+    cd G:\FRIDAY_AI_Assistant
     ```
 2.  Create and activate a Python virtual environment:
     ```bash
@@ -53,12 +66,12 @@ The system reads settings dynamically via environment variables or falls back to
     ```bash
     python backend/run.py
     ```
-    The API will run on `http://127.0.0.1:8000`.
+    The API will run on `http://127.0.0.1:8000`. Ollama should be available at the configured `OLLAMA_BASE_URL`.
 
 ### Running the Frontend (React + Vite)
 1.  Open a new terminal window and navigate to the frontend directory:
     ```bash
-    cd g:/FRIDAY_AI_Assistant/frontend
+    cd G:\FRIDAY_AI_Assistant\frontend
     ```
 2.  Install packages:
     ```bash
@@ -69,3 +82,15 @@ The system reads settings dynamically via environment variables or falls back to
     npm run dev
     ```
     The console interface will open on `http://localhost:5173`.
+
+### Checks
+Run the backend tests with the project virtual environment activated:
+```powershell
+python -m pytest backend\tests -q
+```
+
+Build the frontend:
+```powershell
+Set-Location frontend
+npm run build
+```

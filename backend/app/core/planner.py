@@ -28,6 +28,18 @@ class TaskPlanner:
             ))
             steps.append(PlanStep(
                 step_number=3,
+                description=f"Research recent reporting related to: '{prompt}'",
+                tool_name="web_search",
+                tool_input={"query": prompt, "max_results": 5}
+            ))
+            steps.append(PlanStep(
+                step_number=4,
+                description=f"Cross-check reporting from additional sources about: '{prompt}'",
+                tool_name="web_search",
+                tool_input={"query": f"{prompt} independent sources", "max_results": 3}
+            ))
+            steps.append(PlanStep(
+                step_number=5,
                 description="Synthesize structured intelligence briefing with risk indicators and implications",
                 tool_name=None, # Internal synthesis step
                 tool_input={"prompt": prompt}
@@ -43,22 +55,28 @@ class TaskPlanner:
                 step_number=1,
                 description=f"Execute multi-source search for primary context: '{optimized_q}'",
                 tool_name="web_search",
-                tool_input={"query": optimized_q, "max_results": 4}
+                tool_input={"query": optimized_q, "max_results": 5}
             ))
             steps.append(PlanStep(
                 step_number=2,
-                description=f"Corroborate facts and search for verification: '{optimized_q} verification'",
+                description=f"Execute verification search with fact-check corroboration: '{optimized_q}'",
                 tool_name="web_search",
                 tool_input={"query": f"{optimized_q} fact check verification", "max_results": 3}
             ))
             steps.append(PlanStep(
                 step_number=3,
-                description="Synthesize verified report cross-checking evidence and citations",
+                description="Evidence deduplication and cross-reference analysis",
+                tool_name=None,
+                tool_input={"agent": "research_agent", "operation": "evidence_pipeline"}
+            ))
+            steps.append(PlanStep(
+                step_number=4,
+                description="Synthesize verified research report with structured citations",
                 tool_name=None,
                 tool_input={"prompt": prompt}
             ))
             return ExecutionPlan(
-                task_goal=f"Conduct multi-source research and fact verification for: '{prompt}'",
+                task_goal=f"Conduct multi-source research with evidence verification for: '{prompt}'",
                 steps=steps
             )
 

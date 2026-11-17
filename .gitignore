@@ -6,6 +6,11 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
+# Local environment files
+.env
+.env.*
+!.env.example
+
 # Node
 node_modules/
 dist/
