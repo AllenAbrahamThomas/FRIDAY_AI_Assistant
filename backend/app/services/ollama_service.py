@@ -2,6 +2,8 @@ import httpx
 from app.config import settings
 import re
 import logging
+import asyncio
+from typing import Dict, Any, List, Optional
 from app.services.voice_service import voice_service
 from app.services.weather_service import weather_service
 from app.services.search_service import search_service
@@ -13,13 +15,62 @@ class OllamaService:
     def __init__(self):
         self.base_url = settings.OLLAMA_BASE_URL
         self.model = settings.OLLAMA_MODEL
+        self.timeout = settings.OLLAMA_TIMEOUT_SECONDS
+        self.retry_count = settings.OLLAMA_RETRY_COUNT
 
-    async def get_client(self):
-        return httpx.AsyncClient(timeout=180.0)
+    def get_client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(timeout=self.timeout)
+
+    async def check_health(self) -> Dict[str, Any]:
+        """
+        Quick diagnostic check to verify Ollama availability and model status.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                res = await client.get(f"{self.base_url}/api/tags")
+                if res.status_code == 200:
+                    data = res.json()
+                    models = [m.get("name", "") for m in data.get("models", [])]
+                    model_match = any(self.model in m for m in models)
+                    return {
+                        "connected": True,
+                        "base_url": self.base_url,
+                        "configured_model": self.model,
+                        "model_available": model_match,
+                        "installed_models": models,
+                        "error": None if model_match else f"Configured model '{self.model}' not found in installed Ollama models"
+                    }
+                else:
+                    return {
+                        "connected": False,
+                        "base_url": self.base_url,
+                        "configured_model": self.model,
+                        "model_available": False,
+                        "installed_models": [],
+                        "error": f"Ollama returned HTTP status {res.status_code}"
+                    }
+        except httpx.ConnectError:
+            return {
+                "connected": False,
+                "base_url": self.base_url,
+                "configured_model": self.model,
+                "model_available": False,
+                "installed_models": [],
+                "error": f"Cannot connect to Ollama at {self.base_url} (Connection refused)"
+            }
+        except Exception as e:
+            return {
+                "connected": False,
+                "base_url": self.base_url,
+                "configured_model": self.model,
+                "model_available": False,
+                "installed_models": [],
+                "error": str(e)
+            }
 
     async def raw_generate(self, prompt: str, system_prompt: str = None) -> str:
         """
-        Generates a direct response from Ollama without any routing or search verification.
+        Generates a direct response from Ollama with retries and explicit error classification.
         """
         sys_prompt = system_prompt or "You are FRIDAY, a helpful assistant."
         payload = {
@@ -30,13 +81,35 @@ class OllamaService:
                 "temperature": 0.5
             }
         }
-        try:
-            async with await self.get_client() as client:
-                response = await client.post(f"{self.base_url}/api/generate", json=payload)
-                if response.status_code == 200:
-                    return response.json().get("response", "").strip()
-        except Exception as e:
-            logger.error(f"Error in raw_generate: {e}")
+        
+        last_error = None
+        for attempt in range(self.retry_count + 1):
+            try:
+                async with self.get_client() as client:
+                    response = await client.post(f"{self.base_url}/api/generate", json=payload)
+                    if response.status_code == 200:
+                        return response.json().get("response", "").strip()
+                    elif response.status_code == 404:
+                        logger.error(f"Ollama model '{self.model}' not found (HTTP 404).")
+                        return ""
+                    else:
+                        logger.warning(f"Ollama generate returned status {response.status_code} on attempt {attempt + 1}")
+            except httpx.ConnectError as e:
+                logger.error(f"Cannot connect to Ollama server at {self.base_url}: {e}")
+                last_error = "Ollama connection refused"
+                break
+            except httpx.TimeoutException as e:
+                logger.warning(f"Ollama inference timeout on attempt {attempt + 1}: {e}")
+                last_error = "Ollama inference timed out"
+                if attempt < self.retry_count:
+                    await asyncio.sleep(1.0)
+            except Exception as e:
+                logger.error(f"Error in raw_generate (attempt {attempt + 1}): {e}")
+                last_error = str(e)
+                if attempt < self.retry_count:
+                    await asyncio.sleep(0.5)
+
+        logger.error(f"raw_generate failed after retries. Last error: {last_error}")
         return ""
 
     def detect_world_intent(self, text: str) -> bool:
@@ -46,11 +119,9 @@ class OllamaService:
         """
         text_lower = text.lower()
         
-        # Explicit triggers
         if any(trigger in text_lower for trigger in ["world monitor", "world dashboard", "global map", "situation map"]):
             return True
             
-        # Geopolitical / news / tracking keywords
         keywords = [
             r"\bworld\b", r"\bglobal\b", r"\bgeopolitics?\b", r"\bconflict\b",
             r"\bwar(s)?\b", r"\bnews\b", r"\bearthquake(s)?\b", r"\bprotest(s)?\b",
@@ -76,11 +147,8 @@ class OllamaService:
         from returning zero results on long natural language questions.
         """
         q = text.lower()
-        
-        # Conversational stop-phrases and spelling variations (like "tams" -> "teams")
         q = q.replace("tams", "teams")
         
-        # Strip common conversational clutter
         clutter = [
             r"\bwhich\b", r"\bteams?\b", r"\bare\b", r"\bbeing\b", r"\bplaying\b",
             r"\bagainst\b", r"\band\b", r"\balso\b", r"\btell\b", r"\bme\b", r"\babout\b",
@@ -91,16 +159,12 @@ class OllamaService:
         for term in clutter:
             q = re.sub(term, "", q)
             
-        # Clean punctuation
         q = re.sub(r'[?!\.,:;\(\)]', '', q)
-        # Merge duplicate spaces
         q = re.sub(r'\s+', ' ', q).strip()
         
-        # Fallback to original if we stripped everything
         if not q:
             return text
             
-        # Specific handling for FIFA queries to retrieve actual match status
         if "fifa" in q and ("worldcup" in q or "world cup" in q or "cup" in q):
             return "FIFA World Cup 2026 matches scores today"
             
@@ -108,7 +172,7 @@ class OllamaService:
 
     async def generate_response(self, prompt: str, history: list = None, system_prompt: str = None) -> dict:
         """
-        Generates a response following the user's three routing rules:
+        Generates a response following the routing rules:
         1. World Monitor Query -> Answer from World Monitor app telemetry.
         2. News/Sports Query -> Perform web search, answer using latest facts.
         3. Other general query -> Draft answer with Ollama, verify/recheck via web search, provide corrected response.
@@ -116,13 +180,11 @@ class OllamaService:
         import datetime
         prompt_lower = prompt.lower()
         
-        # Helper detection for weather/location
         wants_weather = any(w in prompt_lower for w in ["weather", "temperature", "temp", "forecast", "climate", "outside"])
         wants_location = any(w in prompt_lower for w in ["location", "where am i", "my city", "current position", "where i am", "which city", "what city"])
         wants_local_info = wants_weather or wants_location
         is_greeting = self.detect_greeting(prompt)
         
-        # Calculate dynamic time-of-day greeting
         hour = datetime.datetime.now().hour
         if 5 <= hour < 12:
             time_greeting = "Good morning Boss."
@@ -133,7 +195,6 @@ class OllamaService:
         else:
             time_greeting = "Greetings Boss. You're awake late at night today. What you up to?"
 
-        # 1. Determine if this is the very first user message in the session history
         is_initial = True
         if history:
             for msg in history:
@@ -144,7 +205,6 @@ class OllamaService:
                     is_initial = False
                     break
 
-        # Define default system prompts
         if is_initial and is_greeting:
             weather = await weather_service.get_local_weather()
             default_system = (
@@ -165,9 +225,7 @@ class OllamaService:
             )
         sys_prompt = system_prompt or default_system
 
-        # Check path:
-        
-        # Route 1: Can the latest answer be obtained from World Monitor?
+        # Route 1: World Monitor
         from app.services.agent_service import agent_service
         is_wm = agent_service.is_world_monitor_telemetry_query(prompt)
         
@@ -191,7 +249,6 @@ class OllamaService:
         if "world" in prompt_lower and "happening" in prompt_lower:
             is_wm = True
             
-        # Check if country name + risk/conflict term (excluding local weather/location queries)
         countries = [
             "myanmar", "ukraine", "pakistan", "mexico", "russia", "palestine", "israel", 
             "yemen", "syria", "somalia", "sudan", "venezuela", "afghanistan", "libya", 
@@ -203,7 +260,6 @@ class OllamaService:
         if has_country and has_conflict_term:
             is_wm = True
 
-        # Ensure weather/location info is not misrouted to World Monitor
         if wants_local_info:
             is_wm = False
 
@@ -250,7 +306,7 @@ class OllamaService:
                     f"Latest World News Feed:\n{news_context}\n\n"
                     "Let me open up the world monitor so you can better visualize what's happening, Boss."
                 )
-                error_msg = "Ollama connection offline"
+                error_msg = f"Ollama connection offline or model '{self.model}' unavailable at {self.base_url}"
                 
             voice_service.speak(response_text)
             return {
@@ -259,7 +315,7 @@ class OllamaService:
                 "error": error_msg
             }
 
-        # Route 2: Is it related to other news or sports?
+        # Route 2: News / Sports
         is_news_sports = False
         news_sports_keywords = [
             "news", "sports", "match", "game", "win", "won", "play", "playing", 
@@ -270,7 +326,6 @@ class OllamaService:
         if any(k in prompt_lower for k in news_sports_keywords):
             is_news_sports = True
             
-        # Ensure we do not misclassify weather/location as news/sports
         if wants_local_info:
             is_news_sports = False
 
@@ -296,7 +351,7 @@ class OllamaService:
             error_msg = None
             if not response_text:
                 response_text = f"I retrieved these news items regarding your query, Sir: {search_context}"
-                error_msg = "Ollama connection offline"
+                error_msg = f"Ollama connection offline or model '{self.model}' unavailable at {self.base_url}"
             
             voice_service.speak(response_text)
             return {
@@ -305,10 +360,10 @@ class OllamaService:
                 "error": error_msg
             }
 
-        # Route 3: Any other type of query (greetings, weather/location, general coding/knowledge, etc.)
+        # Route 3: General Queries
         logger.info("Routing query to General/Other path with verification check.")
         
-        # A. Special handling for weather or location
+        # Local weather/location
         if wants_local_info:
             weather = await weather_service.get_local_weather()
             local_info_context = (
@@ -325,7 +380,7 @@ class OllamaService:
                     f"Telemetry sensor check: Location detected as {weather['city']}. "
                     f"Current temperature is {weather['temp']}°C with {weather['desc']}."
                 )
-                error_msg = "Ollama connection offline"
+                error_msg = f"Ollama connection offline or model '{self.model}' unavailable at {self.base_url}"
             voice_service.speak(response_text)
             return {
                 "text": response_text,
@@ -333,13 +388,13 @@ class OllamaService:
                 "error": error_msg
             }
 
-        # B. Simple greetings
+        # Greetings
         if is_greeting:
             response_text = await self.raw_generate(prompt=prompt, system_prompt=sys_prompt)
             error_msg = None
             if not response_text:
                 response_text = "Hello Allen. How can I assist you today, Sir?"
-                error_msg = "Ollama connection offline"
+                error_msg = f"Ollama connection offline or model '{self.model}' unavailable at {self.base_url}"
             voice_service.speak(response_text)
             return {
                 "text": response_text,
@@ -347,11 +402,9 @@ class OllamaService:
                 "error": error_msg
             }
 
-        # C. General queries (coding, math, general knowledge, etc.) -> Generate, search, verify & correct
-        # Step A: Draft answer
+        # General queries: draft and verify
         draft_response = await self.raw_generate(prompt=prompt, system_prompt=sys_prompt)
         
-        # Step B: Verification Search (Recheck with the latest answer)
         optimized_query = self.optimize_search_query(prompt)
         verification_query = f"{optimized_query} verification fact check"
         try:
@@ -360,7 +413,6 @@ class OllamaService:
             logger.error(f"Search verification failed: {e}")
             verification_facts = "Verification facts unavailable."
 
-        # Step C: Verification / Correction Agent
         verification_system_prompt = (
             "You are FRIDAY (Female Real-time Intelligence Device & Assistant Yard), "
             "a highly sophisticated AI assistant inspired by Tony Stark's assistant in Iron Man. "
@@ -392,7 +444,7 @@ class OllamaService:
             )
             if verification_facts and verification_facts != "Verification facts unavailable.":
                 final_verified_response += f"I retrieved these search results: {verification_facts}"
-            error_msg = "Ollama connection offline"
+            error_msg = f"Ollama connection offline or model '{self.model}' unavailable at {self.base_url}"
 
         voice_service.speak(final_verified_response)
         return {
