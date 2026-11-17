@@ -29,3 +29,4 @@ Thumbs.db
 *.sqlite
 *.log
 backend/app/data/
+backend/data/

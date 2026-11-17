@@ -23,6 +23,31 @@ const renderMarkdownLite = (value) => {
   return html.replace(/\n/g, '<br />');
 };
 
+const getLocalProfileId = () => {
+  const storageKey = 'friday-local-profile-id';
+  let userId = window.localStorage.getItem(storageKey);
+  if (!userId) {
+    userId = window.crypto.randomUUID();
+    window.localStorage.setItem(storageKey, userId);
+  }
+  return userId;
+};
+
+const requestMemoryApi = async (userId, path, options = {}) => {
+  const response = await fetch(`http://localhost:8000/api/memory${path}`, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      'X-User-ID': userId
+    }
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.detail || `Memory request failed (${response.status})`);
+  }
+  return data;
+};
+
 const getInitialGreeting = () => {
   const hour = new Date().getHours();
   let timeGreeting = "Greetings Boss.";
@@ -39,6 +64,7 @@ const getInitialGreeting = () => {
 };
 
 function App() {
+  const [userId] = useState(getLocalProfileId);
   const [messages, setMessages] = useState([
     {
       role: 'friday',
@@ -51,6 +77,14 @@ function App() {
   const [telemetry, setTelemetry] = useState(null);
   const [health, setHealth] = useState(null);
   const [availableModels, setAvailableModels] = useState([]);
+  const [memoryEnabled, setMemoryEnabled] = useState(false);
+  const [memoryStatus, setMemoryStatus] = useState('Persistent storage is off.');
+  const [memorySessions, setMemorySessions] = useState([]);
+  const [savedMemories, setSavedMemories] = useState([]);
+  const [sessionId, setSessionId] = useState(null);
+  const [memoryCategory, setMemoryCategory] = useState('preference');
+  const [memoryDraft, setMemoryDraft] = useState('');
+  const [isMemoryLoading, setIsMemoryLoading] = useState(false);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [openTraces, setOpenTraces] = useState({});
 
@@ -59,6 +93,10 @@ function App() {
   useEffect(() => {
     refreshAll();
   }, []);
+
+  useEffect(() => {
+    loadMemoryData();
+  }, [userId]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -70,6 +108,126 @@ function App() {
 
   const refreshAll = async () => {
     await Promise.all([fetchTelemetry(), fetchHealth(), fetchModels()]);
+  };
+
+  const loadMemoryData = async () => {
+    setIsMemoryLoading(true);
+    try {
+      const [settings, sessions, memories] = await Promise.all([
+        requestMemoryApi(userId, '/settings'),
+        requestMemoryApi(userId, '/sessions'),
+        requestMemoryApi(userId, '/items')
+      ]);
+      setMemoryEnabled(settings.memory_enabled);
+      setMemorySessions(sessions.sessions);
+      setSavedMemories(memories.memories);
+      setMemoryStatus(
+        settings.memory_enabled
+          ? 'Persistent storage is enabled for this local profile.'
+          : 'Persistent storage is off. Existing saved data is retained.'
+      );
+    } catch (error) {
+      setMemoryStatus(`Memory manager unavailable: ${error.message}`);
+    } finally {
+      setIsMemoryLoading(false);
+    }
+  };
+
+  const handleMemoryToggle = async (event) => {
+    const enabled = event.target.checked;
+    setIsMemoryLoading(true);
+    try {
+      const settings = await requestMemoryApi(userId, '/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memory_enabled: enabled })
+      });
+      setMemoryEnabled(settings.memory_enabled);
+      if (!settings.memory_enabled) {
+        setSessionId(null);
+      }
+      setMemoryStatus(
+        enabled
+          ? 'Conversation persistence is on. New messages and explicitly saved memories will be stored locally.'
+          : 'Conversation persistence is off. Existing data remains until you delete it.'
+      );
+    } catch (error) {
+      setMemoryStatus(`Could not update memory settings: ${error.message}`);
+    } finally {
+      setIsMemoryLoading(false);
+    }
+  };
+
+  const handleSaveMemory = async (event) => {
+    event.preventDefault();
+    if (!memoryDraft.trim() || !memoryEnabled) return;
+    setIsMemoryLoading(true);
+    try {
+      await requestMemoryApi(userId, '/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: memoryCategory,
+          content: memoryDraft.trim()
+        })
+      });
+      setMemoryDraft('');
+      await loadMemoryData();
+      setMemoryStatus('Memory saved. FRIDAY can use it in relevant requests while persistence is enabled.');
+    } catch (error) {
+      setMemoryStatus(`Could not save memory: ${error.message}`);
+    } finally {
+      setIsMemoryLoading(false);
+    }
+  };
+
+  const handleDeleteMemory = async (memoryId) => {
+    setIsMemoryLoading(true);
+    try {
+      await requestMemoryApi(userId, `/items/${memoryId}`, { method: 'DELETE' });
+      await loadMemoryData();
+      setMemoryStatus('Saved memory deleted.');
+    } catch (error) {
+      setMemoryStatus(`Could not delete memory: ${error.message}`);
+    } finally {
+      setIsMemoryLoading(false);
+    }
+  };
+
+  const handleLoadSession = async (savedSessionId) => {
+    setIsMemoryLoading(true);
+    try {
+      const data = await requestMemoryApi(userId, `/sessions/${savedSessionId}`);
+      setSessionId(savedSessionId);
+      setMessages(data.messages.map(message => ({
+        role: message.role,
+        content: message.content,
+        trace: null
+      })));
+      setOpenTraces({});
+      setMemoryStatus(`Loaded saved conversation: ${data.session.title}`);
+    } catch (error) {
+      setMemoryStatus(`Could not load conversation: ${error.message}`);
+    } finally {
+      setIsMemoryLoading(false);
+    }
+  };
+
+  const handleDeleteSession = async (savedSessionId) => {
+    setIsMemoryLoading(true);
+    try {
+      await requestMemoryApi(userId, `/sessions/${savedSessionId}`, { method: 'DELETE' });
+      if (sessionId === savedSessionId) {
+        setSessionId(null);
+        setMessages([{ role: 'friday', content: getInitialGreeting(), trace: null }]);
+      }
+      await loadMemoryData();
+      setMemoryStatus('Saved conversation and its messages deleted.');
+    } catch (error) {
+      setMemoryStatus(`Could not delete conversation: ${error.message}`);
+    } finally {
+      setIsMemoryLoading(false);
+    }
   };
 
   const fetchHealth = async () => {
@@ -159,12 +317,22 @@ function App() {
     try {
       const response = await fetch('http://localhost:8000/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: userText, history: messages })
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': userId
+        },
+        body: JSON.stringify({
+          prompt: userText,
+          history: messages,
+          session_id: memoryEnabled ? sessionId : null
+        })
       });
 
       if (response.ok) {
         const data = await response.json();
+        if (data.memory_enabled && data.session_id) {
+          setSessionId(data.session_id);
+        }
         setMessages(prev => [...prev, {
           role: 'friday',
           content: data.response,
@@ -243,6 +411,130 @@ function App() {
             <span className="telemetry-label">Routing Mode:</span>
             <span className="telemetry-value">Task-Adaptive</span>
           </div>
+        </div>
+
+        <div className="widget">
+          <div className="widget-title">
+            <MessageSquare size={14} />
+            <span>Persistent Memory</span>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', marginBottom: '8px' }}>
+            <input
+              type="checkbox"
+              checked={memoryEnabled}
+              onChange={handleMemoryToggle}
+              disabled={isMemoryLoading}
+            />
+            Save and retrieve memory
+          </label>
+          <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.4, marginBottom: '10px' }}>
+            Off by default. When enabled, chats and explicit memories are stored locally. Do not save passwords or secrets. Turning this off pauses storage; use Delete to erase saved data.
+          </p>
+          {memoryEnabled && (
+            <button
+              type="button"
+              className="fallback-btn"
+              style={{ width: '100%', padding: '6px', fontSize: '0.75rem', marginBottom: '8px' }}
+              onClick={() => {
+                setSessionId(null);
+                setMessages([{ role: 'friday', content: getInitialGreeting(), trace: null }]);
+              }}
+            >
+              <span>New Saved Conversation</span>
+            </button>
+          )}
+          <div style={{ maxHeight: '125px', overflowY: 'auto', marginBottom: '10px' }}>
+            <div style={{ color: 'var(--accent-cyan)', fontSize: '0.72rem', marginBottom: '4px' }}>CONVERSATIONS</div>
+            {memorySessions.length ? memorySessions.map(savedSession => (
+              <div key={savedSession.session_id} style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+                <button
+                  type="button"
+                  className="memory-list-button"
+                  onClick={() => handleLoadSession(savedSession.session_id)}
+                  disabled={isMemoryLoading}
+                  title={savedSession.updated_at}
+                >
+                  {savedSession.title} ({savedSession.message_count})
+                </button>
+                <button
+                  type="button"
+                  className="memory-delete-button"
+                  onClick={() => handleDeleteSession(savedSession.session_id)}
+                  disabled={isMemoryLoading}
+                  aria-label={`Delete conversation ${savedSession.title}`}
+                >
+                  ×
+                </button>
+              </div>
+            )) : (
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>No saved conversations.</div>
+            )}
+          </div>
+          <form onSubmit={handleSaveMemory}>
+            <div style={{ color: 'var(--accent-cyan)', fontSize: '0.72rem', marginBottom: '4px' }}>EXPLICIT MEMORIES</div>
+            <select
+              value={memoryCategory}
+              onChange={event => setMemoryCategory(event.target.value)}
+              className="model-select-dropdown"
+              style={{ width: '100%', marginBottom: '6px' }}
+              disabled={!memoryEnabled || isMemoryLoading}
+            >
+              <option value="preference">Preference</option>
+              <option value="project">Project</option>
+              <option value="task">Task</option>
+              <option value="research">Research</option>
+            </select>
+            <textarea
+              value={memoryDraft}
+              onChange={event => setMemoryDraft(event.target.value)}
+              maxLength={2000}
+              placeholder="Save a preference or project detail…"
+              aria-label="Memory content"
+              style={{
+                width: '100%',
+                minHeight: '54px',
+                resize: 'vertical',
+                background: 'rgba(5, 8, 12, 0.8)',
+                color: 'var(--text-primary)',
+                border: '1px solid rgba(0, 240, 255, 0.2)',
+                borderRadius: '4px',
+                padding: '6px',
+                font: 'inherit',
+                fontSize: '0.75rem'
+              }}
+              disabled={!memoryEnabled || isMemoryLoading}
+            />
+            <button
+              type="submit"
+              className="fallback-btn"
+              style={{ width: '100%', padding: '6px', fontSize: '0.75rem', marginTop: '6px' }}
+              disabled={!memoryEnabled || isMemoryLoading || !memoryDraft.trim()}
+            >
+              Save Memory
+            </button>
+          </form>
+          <div style={{ maxHeight: '115px', overflowY: 'auto', marginTop: '8px' }}>
+            {savedMemories.map(memory => (
+              <div key={memory.memory_id} className="memory-item-row">
+                <span title={`${memory.category}: ${memory.content}`}>
+                  <strong>{memory.category}:</strong> {memory.content}
+                </span>
+                <button
+                  type="button"
+                  className="memory-delete-button"
+                  onClick={() => handleDeleteMemory(memory.memory_id)}
+                  disabled={isMemoryLoading}
+                  aria-label={`Delete ${memory.category} memory`}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            {!savedMemories.length && (
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>No explicit memories saved.</div>
+            )}
+          </div>
+          <div className="memory-status" aria-live="polite">{memoryStatus}</div>
         </div>
 
         {/* Geopolitical Status Widget */}

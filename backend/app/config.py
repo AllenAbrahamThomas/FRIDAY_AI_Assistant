@@ -59,6 +59,10 @@ class Settings:
     SEARCH_TIMEOUT_SECONDS: float = float(os.getenv("SEARCH_TIMEOUT_SECONDS", "8.0"))
     WEATHER_TIMEOUT_SECONDS: float = float(os.getenv("WEATHER_TIMEOUT_SECONDS", "8.0"))
     NEWS_API_KEY: str = os.getenv("NEWS_API_KEY", "")
+    MEMORY_DB_PATH: str = os.getenv(
+        "MEMORY_DB_PATH",
+        str(Path(__file__).resolve().parent.parent / "data" / "friday.sqlite3")
+    )
 
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import chat, monitor, models
+from app.routes import chat, monitor, models, memory
 from app.config import settings
 from app.models.model_manager import model_manager
 
@@ -23,6 +23,7 @@ app.add_middleware(
 app.include_router(chat.router)
 app.include_router(monitor.router)
 app.include_router(models.router)
+app.include_router(memory.router)
 
 @app.get("/")
 def read_root():

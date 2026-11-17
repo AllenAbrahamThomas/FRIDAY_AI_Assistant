@@ -758,3 +758,62 @@ body::after {
   border-color: var(--accent-cyan);
   box-shadow: 0 0 5px rgba(0, 240, 255, 0.2);
 }
+
+.memory-list-button {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  background: transparent;
+  border: 1px solid rgba(0, 240, 255, 0.12);
+  border-radius: 3px;
+  color: var(--text-secondary);
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.memory-list-button:hover {
+  color: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+}
+
+.memory-delete-button {
+  background: transparent;
+  border: 1px solid rgba(255, 59, 48, 0.3);
+  border-radius: 3px;
+  color: var(--accent-red);
+  min-width: 24px;
+  cursor: pointer;
+}
+
+.memory-delete-button:disabled,
+.memory-list-button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.memory-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  margin-bottom: 5px;
+}
+
+.memory-item-row span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.memory-status {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  margin-top: 8px;
+  line-height: 1.35;
+}

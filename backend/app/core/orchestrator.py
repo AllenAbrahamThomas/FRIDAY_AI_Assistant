@@ -2,7 +2,7 @@ import time
 import uuid
 import datetime
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from app.schemas.execution import ExecutionTrace, ExecutionPlan
 from app.schemas.agent import AgentResponse
 from app.core.intent_classifier import intent_classifier
@@ -29,7 +29,12 @@ class FRIDAYOrchestrator:
             "world_intelligence": intelligence_agent
         }
 
-    async def process_request(self, prompt: str, history: List[Any] = None) -> AgentResponse:
+    async def process_request(
+        self,
+        prompt: str,
+        history: Optional[List[Any]] = None,
+        memory_context: str = ""
+    ) -> AgentResponse:
         start_time = time.perf_counter()
         trace_id = f"trc-{uuid.uuid4().hex[:8]}"
         created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -50,6 +55,14 @@ class FRIDAYOrchestrator:
         logger.info(f"[{trace_id}] Formulated plan with {len(plan.steps)} steps.")
         conversation_prompt = context_manager.build_conversation_prompt(prompt, history)
         conversation_history = context_manager.format_history(history)
+        if memory_context:
+            saved_memory_context = f"User-saved memories:\n{memory_context[:4000]}"
+            conversation_prompt = f"{saved_memory_context}\n\n{conversation_prompt}"
+            conversation_history = (
+                f"{saved_memory_context}\n\n{conversation_history}"
+                if conversation_history
+                else saved_memory_context
+            )
 
         observations, step_warnings = await execution_engine.execute_plan(plan)
         warnings.extend(step_warnings)
