@@ -2,17 +2,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes import chat, monitor
 from app.config import settings
+from app.services.ollama_service import ollama_service
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Backend API for FRIDAY AI Assistant",
-    version="1.0.0"
+    version=settings.VERSION
 )
 
-# Set up CORS middleware to allow connection from the Vite Dev Server (localhost:5173)
+# Secure CORS middleware allowing configured frontend origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust for production if necessary
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -26,6 +27,17 @@ app.include_router(monitor.router)
 def read_root():
     return {
         "status": "online",
-        "assistant": "FRIDAY AI",
+        "assistant": settings.PROJECT_NAME,
+        "version": settings.VERSION,
         "message": "Subsystems active. Core LLM interface online."
+    }
+
+@app.get("/api/health")
+async def health_check():
+    ollama_health = await ollama_service.check_health()
+    return {
+        "status": "healthy" if ollama_health["connected"] else "degraded",
+        "version": settings.VERSION,
+        "environment": settings.ENVIRONMENT,
+        "ollama": ollama_health,
     }

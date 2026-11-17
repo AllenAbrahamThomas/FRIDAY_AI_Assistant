@@ -19,6 +19,9 @@ class TelemetryData(BaseModel):
     last_updated: str
     recent_events: List[ConflictEvent]
     alternatives: List[Dict[str, str]]
+    is_live: bool = False
+    data_source: str = "cached_offline_fallback"
+    status_message: str = "Operating in offline baseline mode."
 
 @router.get("/telemetry", response_model=TelemetryData)
 async def get_telemetry():
@@ -48,8 +51,7 @@ async def get_telemetry():
         }
     ]
     
-    # Map dictionary returned from service to BaseModel
-    recent_events = [ConflictEvent(**e) for e in telemetry["recent_events"]]
+    recent_events = [ConflictEvent(**e) for e in telemetry.get("recent_events", [])]
     
     return TelemetryData(
         global_risk_index=telemetry["global_risk_index"],
@@ -57,5 +59,8 @@ async def get_telemetry():
         economic_stability_score=telemetry["economic_stability_score"],
         last_updated=telemetry["last_updated"],
         recent_events=recent_events,
-        alternatives=alternatives
+        alternatives=alternatives,
+        is_live=telemetry.get("is_live", False),
+        data_source=telemetry.get("data_source", "cached_offline_fallback"),
+        status_message=telemetry.get("status_message", "Operating in offline baseline mode.")
     )

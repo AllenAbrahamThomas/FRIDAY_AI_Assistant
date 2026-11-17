@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Terminal, Cpu, ShieldAlert, Globe, Compass, 
-  RefreshCw, MessageSquare, Radio, HelpCircle 
+  RefreshCw, MessageSquare, Radio, HelpCircle, Activity, CheckCircle, AlertTriangle 
 } from 'lucide-react';
 import WorldMonitorPopup from './components/WorldMonitorPopup';
 
@@ -30,30 +30,42 @@ function App() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [telemetry, setTelemetry] = useState(null);
+  const [health, setHealth] = useState(null);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
-  const [systemLoad, setSystemLoad] = useState({ cpu: 14, ram: 42 });
   
   const chatEndRef = useRef(null);
 
-  // Fetch telemetry on mount
+  // Fetch telemetry and system health on mount
   useEffect(() => {
-    fetchTelemetry();
-    
-    // Simulate updating CPU/RAM telemetry for rich aesthetics
-    const interval = setInterval(() => {
-      setSystemLoad({
-        cpu: Math.floor(Math.random() * 20) + 5,
-        ram: Math.floor(Math.random() * 5) + 38
-      });
-    }, 4000);
-    
-    return () => clearInterval(interval);
+    refreshAll();
   }, []);
 
   // Scroll to bottom of chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  const refreshAll = async () => {
+    await Promise.all([fetchTelemetry(), fetchHealth()]);
+  };
+
+  const fetchHealth = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/health');
+      if (res.ok) {
+        const data = await res.json();
+        setHealth(data);
+      }
+    } catch (e) {
+      console.warn("Health check failed:", e);
+      setHealth({
+        status: 'degraded',
+        version: '2.0.0',
+        environment: 'offline',
+        ollama: { connected: false, configured_model: 'llama3.2', error: 'Backend unreachable' }
+      });
+    }
+  };
 
   const fetchTelemetry = async () => {
     try {
@@ -64,12 +76,14 @@ function App() {
       }
     } catch (e) {
       console.warn("Telemetry fetch failed, using fallback metrics.", e);
-      // Hard fallback if backend is starting
       setTelemetry({
         global_risk_index: 72.4,
         active_conflicts: 14,
         economic_stability_score: 54.8,
         last_updated: "Offline mode",
+        is_live: false,
+        data_source: "cached_offline_fallback",
+        status_message: "Local API unreachable; using cached baseline.",
         recent_events: [
           { id: "e1", region: "Eastern Europe", severity: "Critical", description: "Geopolitical shifts impacting borders.", source: "Local Alert" }
         ],
@@ -130,27 +144,31 @@ function App() {
           <span className="status-dot pulse"></span>
         </div>
 
-        {/* Telemetry Stats Widget */}
+        {/* Real System Telemetry Widget */}
         <div className="widget">
           <div className="widget-title">
             <Cpu size={14} />
-            <span>Friday Telemetry</span>
+            <span>Core Subsystems</span>
           </div>
           <div className="telemetry-row">
             <span className="telemetry-label">LLM Engine:</span>
-            <span className="telemetry-value cyan">Ollama / Llama 3.2</span>
+            <span className="telemetry-value cyan">
+              Ollama / {health?.ollama?.configured_model || 'llama3.2'}
+            </span>
           </div>
           <div className="telemetry-row">
-            <span className="telemetry-label">API Status:</span>
-            <span className="telemetry-value">Online (8000)</span>
+            <span className="telemetry-label">Model Status:</span>
+            <span className={`telemetry-badge ${health?.ollama?.connected ? 'live' : 'offline'}`}>
+              {health?.ollama?.connected ? 'READY' : 'OFFLINE'}
+            </span>
           </div>
           <div className="telemetry-row">
-            <span className="telemetry-label">CPU Matrix:</span>
-            <span className="telemetry-value">{systemLoad.cpu}%</span>
+            <span className="telemetry-label">API Version:</span>
+            <span className="telemetry-value">v{health?.version || '2.0.0'}</span>
           </div>
           <div className="telemetry-row">
-            <span className="telemetry-label">RAM Usage:</span>
-            <span className="telemetry-value">{systemLoad.ram}%</span>
+            <span className="telemetry-label">Core Mode:</span>
+            <span className="telemetry-value">Local-First</span>
           </div>
         </div>
 
@@ -160,6 +178,12 @@ function App() {
             <div className="widget-title">
               <ShieldAlert size={14} />
               <span>Global Threat Matrix</span>
+            </div>
+            <div className="telemetry-row">
+              <span className="telemetry-label">Data Source:</span>
+              <span className={`telemetry-badge ${telemetry.is_live ? 'live' : 'cached'}`}>
+                {telemetry.is_live ? 'LIVE API' : 'CACHED BASELINE'}
+              </span>
             </div>
             <div className="telemetry-row">
               <span className="telemetry-label">Global Risk:</span>
@@ -191,7 +215,7 @@ function App() {
             <span>World Events Feed</span>
           </div>
           <div style={{ maxHeight: '200px', overflowY: 'auto', paddingRight: '5px' }}>
-            {telemetry?.recent_events.map(event => (
+            {telemetry?.recent_events?.map(event => (
               <div className="news-item" key={event.id}>
                 <div className="news-meta">[{event.region}] - {event.severity}</div>
                 <div className="news-desc">{event.description}</div>
@@ -206,7 +230,7 @@ function App() {
             <Compass size={14} />
             <span>Alternatives Hub</span>
           </div>
-          {telemetry?.alternatives.map((alt, i) => (
+          {telemetry?.alternatives?.map((alt, i) => (
             <a 
               key={i} 
               href={alt.url} 
@@ -229,7 +253,7 @@ function App() {
           <button 
             className="fallback-btn" 
             style={{ padding: '6px 14px', fontSize: '0.8rem' }}
-            onClick={fetchTelemetry}
+            onClick={refreshAll}
           >
             <RefreshCw size={12} />
             <span style={{ marginLeft: '6px' }}>Re-Sync</span>

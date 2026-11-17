@@ -31,34 +31,41 @@ COUNTRY_NAMES = {
 class WorldMonitorService:
     def __init__(self):
         self.api_url = "https://api.worldmonitor.app/api/intelligence/v1/get-risk-scores"
-        self.timeout = 10.0
+        self.timeout = settings.WORLD_MONITOR_TIMEOUT_SECONDS
 
     async def get_raw_risk_scores(self) -> Dict[str, Any]:
         """
-        Fetches raw risk scores from the public World Monitor API.
+        Fetches raw risk scores from the public World Monitor API with retry logic.
         """
         headers = {}
         if settings.WORLD_MONITOR_API_KEY:
             headers["X-WorldMonitor-Key"] = settings.WORLD_MONITOR_API_KEY
 
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(self.api_url, headers=headers)
-                if response.status_code == 200:
-                    return response.json()
-                else:
-                    logger.error(f"World Monitor API returned status code {response.status_code}")
-        except Exception as e:
-            logger.error(f"Error connecting to World Monitor API: {str(e)}")
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.get(self.api_url, headers=headers)
+                    if response.status_code == 200:
+                        return response.json()
+                    elif response.status_code == 401:
+                        logger.warning("World Monitor API requires authorization or valid key (HTTP 401). Using offline baseline data.")
+                        return {}
+                    else:
+                        logger.error(f"World Monitor API returned status code {response.status_code}")
+            except httpx.TimeoutException:
+                logger.warning(f"World Monitor API timeout on attempt {attempt + 1}")
+            except Exception as e:
+                logger.error(f"Error connecting to World Monitor API (attempt {attempt + 1}): {e}")
         return {}
 
     async def get_telemetry(self) -> Dict[str, Any]:
         """
-        Fetches global intelligence risk scores and maps them to the TelemetryData model structure.
+        Fetches global intelligence risk scores and maps them to the TelemetryData model structure,
+        clearly tracking whether data is live or cached offline fallback.
         """
         raw_data = await self.get_raw_risk_scores()
         
-        # Fallback values in case external API is offline
+        # Fallback values in case external API is offline or unauthenticated
         default_events = [
             {
                 "id": "evt-ua",
@@ -84,13 +91,16 @@ class WorldMonitorService:
         ]
 
         if not raw_data or "ciiScores" not in raw_data:
-            logger.warning("Using fallback telemetry data.")
+            logger.info("Using cached baseline telemetry data.")
             return {
                 "global_risk_index": 72.4,
                 "active_conflicts": 14,
                 "economic_stability_score": 54.8,
                 "last_updated": "Cached (Offline Fallback)",
-                "recent_events": default_events
+                "recent_events": default_events,
+                "is_live": False,
+                "data_source": "cached_offline_fallback",
+                "status_message": "Baseline intelligence loaded (offline/unauthenticated fallback)"
             }
 
         cii_scores = raw_data.get("ciiScores", [])
@@ -139,7 +149,6 @@ class WorldMonitorService:
             if mil_activity > 0:
                 desc_parts.append(f"Military/security component: {mil_activity:.0f}.")
 
-            # Maximum content: Extract and format all other components
             news_activity = components.get("newsActivity", 0)
             if news_activity > 0:
                 desc_parts.append(f"News/media activity index: {news_activity:.0f}.")
@@ -161,11 +170,8 @@ class WorldMonitorService:
             })
 
         # Sort events by severity / score descending
-        # Let's map severity to a rank for sorting
         sev_rank = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1}
-        # Get raw score for sorting
         def sort_key(e):
-            # find corresponding combined score
             code = e["id"].split("-")[-1].upper()
             val = 0.0
             for cs in cii_scores:
@@ -181,7 +187,10 @@ class WorldMonitorService:
             "active_conflicts": active_conflicts,
             "economic_stability_score": round(economic_stability, 1),
             "last_updated": "Live",
-            "recent_events": recent_events[:20] # return top 20 events (maximum content)
+            "recent_events": recent_events[:20],
+            "is_live": True,
+            "data_source": "live_worldmonitor_api",
+            "status_message": "Connected to live World Monitor feed"
         }
 
     async def get_world_summary_context(self) -> str:
@@ -190,14 +199,16 @@ class WorldMonitorService:
         """
         telemetry = await self.get_telemetry()
         
+        status_label = "LIVE" if telemetry.get("is_live") else "OFFLINE BASELINE (CACHED)"
         context_lines = [
+            f"World Monitor Data Status: {status_label}",
             f"Global Risk Index: {telemetry['global_risk_index']}/100",
             f"Active Critical/High Instability Regions: {telemetry['active_conflicts']}",
             f"Global Economic Stability Score: {telemetry['economic_stability_score']}/100",
             "\nTop Monitored Conflict/Instability Regions:"
         ]
         
-        for event in telemetry["recent_events"]:
+        for event in telemetry.get("recent_events", []):
             context_lines.append(
                 f"- {event['region']} (Severity: {event['severity']}): {event['description']}"
             )
@@ -257,7 +268,6 @@ class WorldMonitorService:
         ]
 
         if not settings.WORLD_MONITOR_API_KEY:
-            logger.warning("WORLD_MONITOR_API_KEY not configured. Using fallback news feed.")
             return fallback_news
 
         headers = {"X-WorldMonitor-Key": settings.WORLD_MONITOR_API_KEY}
@@ -270,12 +280,10 @@ class WorldMonitorService:
                     categories = raw_data.get("categories", {})
                     
                     items = []
-                    # Prefer world / politics / general categories
                     for cat in ["world", "politics", "crisis", "general"]:
                         if cat in categories:
                             items.extend(categories[cat].get("items", []))
                     
-                    # If nothing extracted from specific categories, merge all categories
                     if not items:
                         for cat_bucket in categories.values():
                             items.extend(cat_bucket.get("items", []))
@@ -297,7 +305,6 @@ class WorldMonitorService:
         except Exception as e:
             logger.error(f"Error fetching news from World Monitor API: {str(e)}")
 
-        logger.warning("Using fallback news feed due to API failure.")
         return fallback_news
 
     async def get_world_news_context(self) -> str:
@@ -317,7 +324,6 @@ class WorldMonitorService:
             snippet = item.get("snippet", "")
             pub_at = item.get("publishedAt")
             
-            # Format relative time if publishedAt timestamp is present
             time_str = "Recently"
             if pub_at:
                 try:
