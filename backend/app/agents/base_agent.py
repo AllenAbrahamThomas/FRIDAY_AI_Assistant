@@ -76,13 +76,13 @@ class BaseAgent(ABC):
             return result
         except Exception as e:
             duration = round(time.perf_counter() - start, 3)
-            logger.error(f"Agent '{self.name}' failed: {e}", exc_info=True)
+            logger.error("Agent '%s' failed (%s)", self.name, type(e).__name__)
             return AgentResult(
                 agent_name=self.name,
                 success=False,
-                response_text=f"Agent '{self.name}' encountered an error: {str(e)}",
+                response_text=f"Agent '{self.name}' encountered an error.",
                 duration_seconds=duration,
-                warnings=[str(e)]
+                warnings=[f"Agent failed ({type(e).__name__})"]
             )
 
     @abstractmethod

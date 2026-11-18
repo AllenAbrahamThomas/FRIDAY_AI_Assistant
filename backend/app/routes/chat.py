@@ -117,7 +117,7 @@ async def chat_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error handling chat endpoint: {e}", exc_info=True)
+        logger.error("Unexpected chat endpoint failure (%s)", type(e).__name__)
         raise HTTPException(
             status_code=500,
             detail="An unexpected internal error occurred while processing your request."

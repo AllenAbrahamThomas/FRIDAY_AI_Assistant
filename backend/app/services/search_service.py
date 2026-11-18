@@ -59,7 +59,7 @@ class SearchService:
                             f"Snippet: {snippet}\n"
                         )
         except Exception as e:
-            logger.warning(f"Google News RSS context query failed: {e}")
+            logger.warning("Google News RSS search failed (%s)", type(e).__name__)
 
         # 2. Secondary Fallback: DuckDuckGo Search (in case RSS parsing fails)
         if not results:
@@ -88,7 +88,7 @@ class SearchService:
                                 f"Snippet: {r.get('body')}\n"
                             )
             except Exception as e:
-                logger.error(f"DuckDuckGo fallback search failed: {e}")
+                logger.error("DuckDuckGo fallback search failed (%s)", type(e).__name__)
 
         if results:
             return "\n---\n".join(results)

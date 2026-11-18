@@ -47,7 +47,7 @@ class FRIDAYOrchestrator:
         model_latency_seconds = None
         token_count = None
 
-        logger.info(f"[{trace_id}] Received user request: '{prompt[:80]}...'")
+        logger.info("[%s] Received user request", trace_id)
 
         intent = intent_classifier.classify(prompt)
         logger.info(f"[{trace_id}] Detected intent: {intent.intent} (confidence: {intent.confidence})")

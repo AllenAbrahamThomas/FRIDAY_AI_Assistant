@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import pytest
@@ -15,6 +16,26 @@ def test_is_world_monitor_telemetry_query():
     assert agent_service.is_world_monitor_telemetry_query("show the world monitor telemetry stats") is True
     assert agent_service.is_world_monitor_telemetry_query("what is the latest news on technology?") is False
     assert agent_service.is_world_monitor_telemetry_query("who won the match today?") is False
+
+
+@pytest.mark.asyncio
+async def test_agent_pipeline_does_not_log_user_prompt(caplog):
+    sensitive_prompt = "what is the global risk index? api_key=fixture-secret-value"
+    caplog.set_level(logging.INFO)
+
+    with patch.object(
+        world_monitor_service,
+        "get_world_summary_context",
+        return_value="Global Risk Index: 80.0/100"
+    ), patch.object(
+        ollama_service,
+        "raw_generate",
+        return_value="The global risk index is 80."
+    ), patch("app.services.voice_service.voice_service.speak"):
+        await agent_service.run_agent_pipeline(sensitive_prompt)
+
+    assert sensitive_prompt not in caplog.text
+    assert "fixture-secret-value" not in caplog.text
 
 @pytest.mark.asyncio
 async def test_run_agent_pipeline_telemetry_shortcut():

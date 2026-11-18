@@ -4,6 +4,7 @@ import logging
 import asyncio
 from typing import List, Dict, Any, Optional
 from app.config import settings
+from app.core.url_utils import sanitize_endpoint
 from app.models.base_provider import BaseModelProvider, ModelInfo, ModelGenerationResult, ProviderHealth
 
 logger = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ class OllamaProvider(BaseModelProvider):
                         last_error = f"Ollama returned HTTP {response.status_code}"
             except httpx.ConnectError:
                 latency = round(time.perf_counter() - start_time, 3)
-                err = f"Cannot connect to Ollama at {self.base_url} (Connection refused)"
+                err = "Cannot connect to Ollama (connection refused)"
                 logger.error(err)
                 return ModelGenerationResult(
                     text="",
@@ -90,7 +91,7 @@ class OllamaProvider(BaseModelProvider):
                 if attempt < self.retry_count:
                     await asyncio.sleep(0.5)
             except Exception as e:
-                last_error = str(e)
+                last_error = f"Model generation failed ({type(e).__name__})"
                 if attempt < self.retry_count:
                     await asyncio.sleep(0.5)
 
@@ -140,7 +141,7 @@ class OllamaProvider(BaseModelProvider):
                 return ProviderHealth(
                     connected=False,
                     provider_name=self.name,
-                    base_url=self.base_url,
+                    base_url=sanitize_endpoint(self.base_url),
                     error=f"Ollama returned HTTP {response.status_code}"
                 )
 
@@ -152,16 +153,25 @@ class OllamaProvider(BaseModelProvider):
             return ProviderHealth(
                 connected=True,
                 provider_name=self.name,
-                base_url=self.base_url,
+                base_url=sanitize_endpoint(self.base_url),
                 available_models=model_names,
                 error=None
             )
-        except Exception as e:
-            logger.warning("Ollama health check failed: %s", e)
+        except httpx.ConnectError:
+            logger.warning("Ollama health check failed (connection refused)")
             return ProviderHealth(
                 connected=False,
                 provider_name=self.name,
-                base_url=self.base_url,
+                base_url=sanitize_endpoint(self.base_url),
                 available_models=[],
-                error=str(e)
+                error="Ollama offline (connection refused)"
+            )
+        except Exception as e:
+            logger.warning("Ollama health check failed (%s)", type(e).__name__)
+            return ProviderHealth(
+                connected=False,
+                provider_name=self.name,
+                base_url=sanitize_endpoint(self.base_url),
+                available_models=[],
+                error=f"Ollama health check failed ({type(e).__name__})"
             )

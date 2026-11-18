@@ -59,7 +59,11 @@ class WorldMonitorService:
             except httpx.TimeoutException:
                 logger.warning(f"World Monitor API timeout on attempt {attempt + 1}")
             except Exception as e:
-                logger.error(f"Error connecting to World Monitor API (attempt {attempt + 1}): {e}")
+                logger.error(
+                    "World Monitor API request failed on attempt %s (%s)",
+                    attempt + 1,
+                    type(e).__name__
+                )
         return {}
 
     async def get_telemetry(self) -> Dict[str, Any]:
@@ -385,7 +389,7 @@ class WorldMonitorService:
                 else:
                     logger.error(f"World Monitor news API returned status code {response.status_code}")
         except Exception as e:
-            logger.error(f"Error fetching news from World Monitor API: {str(e)}")
+            logger.error("World Monitor news request failed (%s)", type(e).__name__)
 
         return self._mark_news_as_fallback(fallback_news)
 

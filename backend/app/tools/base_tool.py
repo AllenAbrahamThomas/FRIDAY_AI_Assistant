@@ -78,7 +78,7 @@ class BaseTool(ABC):
             }
         except Exception as e:
             duration = round(time.perf_counter() - start_time, 3)
-            err_msg = f"Tool '{self.name}' failed: {str(e)}"
+            err_msg = f"Tool '{self.name}' failed ({type(e).__name__})"
             logger.error(err_msg)
             return {
                 "tool_name": self.name,

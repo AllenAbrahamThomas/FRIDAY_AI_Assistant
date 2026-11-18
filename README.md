@@ -115,5 +115,14 @@ python -m pytest backend\tests -q
 Build the frontend:
 ```powershell
 Set-Location frontend
+npm run lint
 npm run build
 ```
+
+### Architecture, API, and examples
+
+See [the architecture and API reference](docs/architecture.md) for the service map, local API endpoints, and security boundaries. [Illustrative workflow examples](docs/examples.md) show report and trace formats using clearly labeled test fixtures, not claims of live research.
+
+The workspace screenshot below records the interface layout; backend/model statuses in the image are environment-specific and should not be read as a live availability guarantee.
+
+![FRIDAY assistant workspace](docs/assistant-workspace.png)

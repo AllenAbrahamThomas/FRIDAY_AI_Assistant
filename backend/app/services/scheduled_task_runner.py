@@ -26,8 +26,11 @@ class ScheduledTaskRunner:
             recovered = await asyncio.to_thread(self.service.recover_interrupted_runs)
             if recovered:
                 logger.warning("Marked %s interrupted scheduled task runs as failed", recovered)
-        except Exception:
-            logger.exception("Could not recover interrupted scheduled task runs")
+        except Exception as error:
+            logger.error(
+                "Could not recover interrupted scheduled task runs (%s)",
+                type(error).__name__
+            )
 
         while True:
             try:
@@ -35,8 +38,8 @@ class ScheduledTaskRunner:
                     self.service.claim_due_tasks,
                     datetime.datetime.now(datetime.timezone.utc)
                 )
-            except Exception:
-                logger.exception("Could not check for due scheduled tasks")
+            except Exception as error:
+                logger.error("Could not check for due scheduled tasks (%s)", type(error).__name__)
                 await asyncio.sleep(self.poll_interval_seconds)
                 continue
 
@@ -60,10 +63,11 @@ class ScheduledTaskRunner:
                         "Backend stopped before this run completed; it was not retried automatically."
                     )
                     raise
-                except Exception:
-                    logger.exception(
-                        "Scheduled task %s failed during execution",
-                        task["task_id"]
+                except Exception as error:
+                    logger.error(
+                        "Scheduled task %s failed during execution (%s)",
+                        task["task_id"],
+                        type(error).__name__
                     )
                     try:
                         await asyncio.to_thread(
@@ -73,10 +77,11 @@ class ScheduledTaskRunner:
                             None,
                             "Scheduled task failed. Check backend logs for details."
                         )
-                    except Exception:
-                        logger.exception(
-                            "Could not record failure for scheduled task %s",
-                            task["task_id"]
+                    except Exception as error:
+                        logger.error(
+                            "Could not record failure for scheduled task %s (%s)",
+                            task["task_id"],
+                            type(error).__name__
                         )
 
             await asyncio.sleep(self.poll_interval_seconds)

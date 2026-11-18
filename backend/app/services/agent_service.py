@@ -35,7 +35,7 @@ class AgentService:
         # We import ollama_service locally to avoid circular dependencies
         from app.services.ollama_service import ollama_service
 
-        logger.info(f"Agent Pipeline triggered for query: '{prompt}'")
+        logger.info("Agent pipeline triggered")
 
         # 1. Check if this query can be directly answered by World Monitor telemetry data
         if self.is_world_monitor_telemetry_query(prompt):
@@ -43,7 +43,7 @@ class AgentService:
             try:
                 world_context = await world_monitor_service.get_world_summary_context()
             except Exception as e:
-                logger.error(f"Error fetching world monitor context: {e}")
+                logger.error("World Monitor context failed (%s)", type(e).__name__)
                 world_context = "World Monitor service is currently unreachable."
 
             system_prompt = (
@@ -83,7 +83,7 @@ class AgentService:
         try:
             world_context = await world_monitor_service.get_world_summary_context()
         except Exception as e:
-            logger.error(f"Error fetching world monitor context: {e}")
+            logger.error("World Monitor context failed (%s)", type(e).__name__)
             world_context = "World Monitor offline."
 
         # Step B: News Agent (Fetch news headlines)
@@ -92,7 +92,7 @@ class AgentService:
         try:
             news_context = await search_service.search(optimized_query)
         except Exception as e:
-            logger.error(f"Error fetching news context: {e}")
+            logger.error("News search failed (%s)", type(e).__name__)
             news_context = "News search feed offline."
 
         # Combine context for Drafting
@@ -117,16 +117,14 @@ class AgentService:
         if not draft_response:
             draft_response = f"I retrieved these news items regarding your query, Sir: {news_context}"
 
-        logger.info(f"Draft Response: {draft_response}")
-
         # Step D: Search Agent Verification
         # Query search engine using the draft response key terms or user query + verification keywords
         verification_query = f"{optimized_query} verification fact check"
-        logger.info(f"Running Search Agent verification query: '{verification_query}'")
+        logger.info("Running search verification")
         try:
             verification_facts = await search_service.search(verification_query)
         except Exception as e:
-            logger.error(f"Search Agent verification failed: {e}")
+            logger.error("Search verification failed (%s)", type(e).__name__)
             verification_facts = "Verification facts unavailable."
 
         # Step E: Verification / Correction Agent (Self-Correction)

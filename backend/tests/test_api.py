@@ -105,6 +105,18 @@ def test_chat_history_is_validated():
     )
     assert response.status_code == 422
 
+def test_model_inputs_are_bounded():
+    oversized_model = client.post(
+        "/api/models/select",
+        json={"model": "x" * 121}
+    )
+    oversized_prompt = client.post(
+        "/api/models/benchmark",
+        json={"model": "llama3.2", "prompt": "x" * 4001}
+    )
+    assert oversized_model.status_code == 422
+    assert oversized_prompt.status_code == 422
+
 @pytest.mark.asyncio
 async def test_ollama_mock_fallback():
     with patch.object(ollama_service, "raw_generate", AsyncMock(return_value="")), \
@@ -147,7 +159,8 @@ def test_cors_allows_only_configured_vite_origins():
         "/api/chat",
         headers={
             "Origin": "http://localhost:5173",
-            "Access-Control-Request-Method": "POST"
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type,x-user-id"
         }
     )
     blocked = client.options(
@@ -158,4 +171,6 @@ def test_cors_allows_only_configured_vite_origins():
         }
     )
     assert allowed.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert "POST" in allowed.headers.get("access-control-allow-methods", "")
+    assert "x-user-id" in allowed.headers.get("access-control-allow-headers", "").lower()
     assert "access-control-allow-origin" not in blocked.headers

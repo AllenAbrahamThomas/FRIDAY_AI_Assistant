@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 import httpx
 from app.models.model_manager import model_manager, BenchmarkResult
@@ -13,11 +13,14 @@ class ModelListResponse(BaseModel):
     models: List[ModelInfo]
 
 class SelectModelRequest(BaseModel):
-    model: str
+    model: str = Field(..., min_length=1, max_length=120)
 
 class BenchmarkRequest(BaseModel):
-    model: str
-    prompt: Optional[str] = "Explain quantum entanglement in 25 words."
+    model: str = Field(..., min_length=1, max_length=120)
+    prompt: Optional[str] = Field(
+        default="Explain quantum entanglement in 25 words.",
+        max_length=4000
+    )
 
 async def _load_available_models() -> List[ModelInfo]:
     try:
@@ -25,7 +28,7 @@ async def _load_available_models() -> List[ModelInfo]:
     except (httpx.HTTPError, OllamaProviderError) as exc:
         raise HTTPException(
             status_code=503,
-            detail=f"Unable to retrieve models from Ollama: {exc}"
+            detail=f"Unable to retrieve models from Ollama ({type(exc).__name__})"
         ) from exc
 
 @router.get("", response_model=ModelListResponse)

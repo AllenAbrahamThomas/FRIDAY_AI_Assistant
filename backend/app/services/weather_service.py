@@ -25,7 +25,7 @@ class WeatherService:
                         lon = loc.get("longitude")
                         city = loc.get("city")
                 except Exception as e:
-                    logger.warning(f"ipapi.co failed: {e}")
+                    logger.warning("ipapi.co request failed (%s)", type(e).__name__)
 
                 # 2. Try ipinfo.io (HTTPS geolocator fallback)
                 if lat is None or lon is None:
@@ -40,7 +40,7 @@ class WeatherService:
                                 lat = float(lat_str)
                                 lon = float(lon_str)
                     except Exception as e:
-                        logger.warning(f"ipinfo.io failed: {e}")
+                        logger.warning("ipinfo.io request failed (%s)", type(e).__name__)
 
                 # 3. Try freeipapi.com (high reliability, high limit fallback)
                 if lat is None or lon is None:
@@ -52,7 +52,7 @@ class WeatherService:
                             lon = loc.get("longitude")
                             city = loc.get("cityName")
                     except Exception as e:
-                        logger.warning(f"freeipapi.com failed: {e}")
+                        logger.warning("freeipapi.com request failed (%s)", type(e).__name__)
 
                 # 4. Try ip-api.com (HTTP geolocator fallback)
                 if lat is None or lon is None:
@@ -65,7 +65,7 @@ class WeatherService:
                                 lon = loc.get("lon")
                                 city = loc.get("city")
                     except Exception as e:
-                        logger.warning(f"ip-api.com failed: {e}")
+                        logger.warning("ip-api.com request failed (%s)", type(e).__name__)
 
                 if not city:
                     city = "your area"
@@ -103,7 +103,7 @@ class WeatherService:
                                 "status_message": "Current weather retrieved from Open-Meteo."
                             }
         except Exception as e:
-            logger.error(f"Error fetching local weather: {e}")
+            logger.error("Local weather request failed (%s)", type(e).__name__)
             
         return {
             "city": city or "your area",

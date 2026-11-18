@@ -48,7 +48,7 @@ class VoiceService:
             engine.say(text)
             engine.runAndWait()
         except Exception as e:
-            logger.error(f"Voice speech thread crashed: {e}")
+            logger.error("Voice speech thread failed (%s)", type(e).__name__)
 
     def speak(self, text: str):
         """

@@ -4,6 +4,7 @@ import re
 import logging
 import asyncio
 from typing import Dict, Any, List, Optional
+from app.core.url_utils import sanitize_endpoint
 from app.services.voice_service import voice_service
 from app.services.weather_service import weather_service
 from app.services.search_service import search_service
@@ -34,7 +35,7 @@ class OllamaService:
                     model_match = any(self.model in m for m in models)
                     return {
                         "connected": True,
-                        "base_url": self.base_url,
+                        "base_url": sanitize_endpoint(self.base_url),
                         "configured_model": self.model,
                         "model_available": model_match,
                         "installed_models": models,
@@ -43,7 +44,7 @@ class OllamaService:
                 else:
                     return {
                         "connected": False,
-                        "base_url": self.base_url,
+                        "base_url": sanitize_endpoint(self.base_url),
                         "configured_model": self.model,
                         "model_available": False,
                         "installed_models": [],
@@ -52,20 +53,20 @@ class OllamaService:
         except httpx.ConnectError:
             return {
                 "connected": False,
-                "base_url": self.base_url,
+                "base_url": sanitize_endpoint(self.base_url),
                 "configured_model": self.model,
                 "model_available": False,
                 "installed_models": [],
-                "error": f"Cannot connect to Ollama at {self.base_url} (Connection refused)"
+                "error": "Cannot connect to Ollama (connection refused)"
             }
         except Exception as e:
             return {
                 "connected": False,
-                "base_url": self.base_url,
+                "base_url": sanitize_endpoint(self.base_url),
                 "configured_model": self.model,
                 "model_available": False,
                 "installed_models": [],
-                "error": str(e)
+                "error": f"Ollama health check failed ({type(e).__name__})"
             }
 
     async def raw_generate(self, prompt: str, system_prompt: str = None) -> str:
@@ -94,18 +95,22 @@ class OllamaService:
                         return ""
                     else:
                         logger.warning(f"Ollama generate returned status {response.status_code} on attempt {attempt + 1}")
-            except httpx.ConnectError as e:
-                logger.error(f"Cannot connect to Ollama server at {self.base_url}: {e}")
+            except httpx.ConnectError:
+                logger.error("Cannot connect to Ollama server")
                 last_error = "Ollama connection refused"
                 break
-            except httpx.TimeoutException as e:
-                logger.warning(f"Ollama inference timeout on attempt {attempt + 1}: {e}")
+            except httpx.TimeoutException:
+                logger.warning("Ollama inference timeout on attempt %s", attempt + 1)
                 last_error = "Ollama inference timed out"
                 if attempt < self.retry_count:
                     await asyncio.sleep(1.0)
             except Exception as e:
-                logger.error(f"Error in raw_generate (attempt {attempt + 1}): {e}")
-                last_error = str(e)
+                logger.error(
+                    "Ollama raw generation failed on attempt %s (%s)",
+                    attempt + 1,
+                    type(e).__name__
+                )
+                last_error = f"Ollama generation failed ({type(e).__name__})"
                 if attempt < self.retry_count:
                     await asyncio.sleep(0.5)
 
@@ -273,13 +278,13 @@ class OllamaService:
             try:
                 world_context = await world_monitor_service.get_world_summary_context()
             except Exception as e:
-                logger.error(f"Error fetching world monitor context: {e}")
+                logger.error("World Monitor context failed (%s)", type(e).__name__)
                 world_context = "World Monitor service is currently unreachable."
             
             try:
                 news_context = await world_monitor_service.get_world_news_context()
             except Exception as e:
-                logger.error(f"Error fetching world news context for World Monitor path: {e}")
+                logger.error("World Monitor news context failed (%s)", type(e).__name__)
                 news_context = "World news feed offline."
             
             wm_system_prompt = (
@@ -311,7 +316,7 @@ class OllamaService:
                     f"Latest World News Feed:\n{news_context}\n\n"
                     "Let me open up the world monitor so you can better visualize what's happening, Boss."
                 )
-                error_msg = f"Ollama connection offline or model '{self.model}' unavailable at {self.base_url}"
+                error_msg = f"Ollama connection offline or model '{self.model}' unavailable"
                 
             voice_service.speak(response_text)
             return {
@@ -340,7 +345,7 @@ class OllamaService:
             try:
                 search_context = await search_service.search(optimized_query)
             except Exception as e:
-                logger.error(f"Error fetching search context: {e}")
+                logger.error("News search failed (%s)", type(e).__name__)
                 search_context = "No real-time search context could be retrieved for this query."
             
             news_system_prompt = (
@@ -356,7 +361,7 @@ class OllamaService:
             error_msg = None
             if not response_text:
                 response_text = f"I retrieved these news items regarding your query, Sir: {search_context}"
-                error_msg = f"Ollama connection offline or model '{self.model}' unavailable at {self.base_url}"
+                error_msg = f"Ollama connection offline or model '{self.model}' unavailable"
             
             voice_service.speak(response_text)
             return {
@@ -398,7 +403,7 @@ class OllamaService:
                     f"Telemetry sensor check: Location detected as {weather['city']}. "
                     f"Current temperature is {weather['temp']}°C with {weather['desc']}."
                 )
-                error_msg = f"Ollama connection offline or model '{self.model}' unavailable at {self.base_url}"
+                error_msg = f"Ollama connection offline or model '{self.model}' unavailable"
             voice_service.speak(response_text)
             return {
                 "text": response_text,
@@ -412,7 +417,7 @@ class OllamaService:
             error_msg = None
             if not response_text:
                 response_text = "Hello Allen. How can I assist you today, Sir?"
-                error_msg = f"Ollama connection offline or model '{self.model}' unavailable at {self.base_url}"
+                error_msg = f"Ollama connection offline or model '{self.model}' unavailable"
             voice_service.speak(response_text)
             return {
                 "text": response_text,
@@ -428,7 +433,7 @@ class OllamaService:
         try:
             verification_facts = await search_service.search(verification_query)
         except Exception as e:
-            logger.error(f"Search verification failed: {e}")
+            logger.error("Search verification failed (%s)", type(e).__name__)
             verification_facts = "Verification facts unavailable."
 
         verification_system_prompt = (
@@ -457,12 +462,12 @@ class OllamaService:
         
         if not final_verified_response:
             final_verified_response = (
-                f"Diagnostic mode active, Allen. Establishing connection to my core LLM engine at {self.base_url} is currently delayed. "
+                "Diagnostic mode active, Allen. Establishing connection to my core LLM engine is currently delayed. "
                 "Subsystems are functional. "
             )
             if verification_facts and verification_facts != "Verification facts unavailable.":
                 final_verified_response += f"I retrieved these search results: {verification_facts}"
-            error_msg = f"Ollama connection offline or model '{self.model}' unavailable at {self.base_url}"
+            error_msg = f"Ollama connection offline or model '{self.model}' unavailable"
 
         voice_service.speak(final_verified_response)
         return {
