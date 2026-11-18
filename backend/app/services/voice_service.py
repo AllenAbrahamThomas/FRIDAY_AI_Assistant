@@ -2,12 +2,15 @@ import pyttsx3
 import threading
 import logging
 import re
+from typing import Optional
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 class VoiceService:
-    def __init__(self):
-        pass
+    def __init__(self, enabled: Optional[bool] = None):
+        self.enabled = settings.SERVER_TTS_ENABLED if enabled is None else enabled
 
     def _speak_worker(self, text: str):
         try:
@@ -52,7 +55,7 @@ class VoiceService:
         Executes text-to-speech in a background thread so the FastAPI response 
         returns instantly while the computer starts speaking.
         """
-        if not text:
+        if not self.enabled or not text:
             return
             
         # 1. Strip markdown characters (*, _, #, `, -)

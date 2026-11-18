@@ -2005,3 +2005,71 @@ body::after {
     display: none;
   }
 }
+
+.voice-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.voice-toggle,
+.voice-control-button,
+.message-voice-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.voice-toggle {
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.voice-toggle input {
+  accent-color: var(--accent-cyan);
+}
+
+.voice-control-button,
+.message-voice-button {
+  border: 1px solid rgba(0, 240, 255, 0.28);
+  border-radius: 6px;
+  padding: 6px 9px;
+  background: rgba(0, 240, 255, 0.06);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+}
+
+.voice-control-button:hover:not(:disabled),
+.message-voice-button:hover {
+  border-color: var(--accent-cyan);
+  background: rgba(0, 240, 255, 0.12);
+}
+
+.voice-control-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.voice-status {
+  flex: 1;
+  min-width: 180px;
+  line-height: 1.4;
+}
+
+.message-voice-button {
+  margin-top: 9px;
+  padding: 4px 8px;
+  color: var(--accent-cyan);
+}
+
+@media (max-width: 480px) {
+  .voice-status {
+    flex-basis: 100%;
+  }
+}

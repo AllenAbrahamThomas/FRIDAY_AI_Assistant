@@ -36,6 +36,13 @@ The system reads settings dynamically via environment variables or falls back to
 | `SEARCH_TIMEOUT_SECONDS` | News/search request timeout | `8.0` |
 | `WEATHER_TIMEOUT_SECONDS` | Location/weather request timeout | `8.0` |
 | `MEMORY_DB_PATH` | Local SQLite path for opt-in conversation, memory, and execution history | `backend/data/friday.sqlite3` |
+| `SERVER_TTS_ENABLED` | Opt in to legacy speech playback on the backend host | `false` |
+
+### Voice controls
+
+The assistant workspace can use browser speech recognition for microphone input and browser speech synthesis for spoken replies. Voice is off by default; enabling it is an explicit user action, and the browser asks for microphone permission when speech input starts. Speech recognition support and processing vary by browser and may rely on the browser's speech service. Transcribed text is placed in the composer for review before sending. Text chat remains available when voice is off or unsupported.
+
+The legacy `pyttsx3` backend-host playback is disabled by default to avoid duplicate audio and to keep voice output under the browser controls. Set `SERVER_TTS_ENABLED=true` only when host-side playback is desired; this setting is independent of the browser voice toggle.
 
 ### Memory privacy
 

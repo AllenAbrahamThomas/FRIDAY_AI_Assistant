@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Send, Terminal, MessageSquare, Globe, BookOpen, Activity, Database,
-  Settings, RefreshCw, Cpu
+  Settings, RefreshCw, Cpu, Mic, MicOff, Volume2, VolumeX
 } from 'lucide-react';
 import WorldMonitorPopup from './components/WorldMonitorPopup';
 import {
@@ -146,15 +146,171 @@ function App() {
   const [openHistory, setOpenHistory] = useState({});
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [openTraces, setOpenTraces] = useState({});
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState(
+    'Voice controls are off; text chat remains available.'
+  );
 
   const chatEndRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const utteranceRef = useRef(null);
+  const voiceEnabledRef = useRef(false);
+  const speechRecognitionAvailable = Boolean(
+    window.SpeechRecognition || window.webkitSpeechRecognition
+  );
+  const speechSynthesisAvailable = Boolean(window.speechSynthesis);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading, activeView]);
 
+  useEffect(() => () => {
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    recognition?.abort();
+    window.speechSynthesis?.cancel();
+  }, []);
+
   const toggleTrace = (index) => {
     setOpenTraces(prev => ({ ...prev, [index]: !prev[index] }));
+  };
+
+  const cancelSpeech = () => {
+    window.speechSynthesis?.cancel();
+    utteranceRef.current = null;
+    setIsSpeaking(false);
+    setVoiceStatus(voiceEnabledRef.current ? 'Voice playback stopped.' : 'Voice controls are off.');
+  };
+
+  const speakResponse = (text) => {
+    if (!text?.trim() || !voiceEnabledRef.current || !speechSynthesisAvailable) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utteranceRef.current = utterance;
+    utterance.onstart = () => {
+      if (utteranceRef.current === utterance) {
+        setIsSpeaking(true);
+        setVoiceStatus('Speaking response.');
+      }
+    };
+    utterance.onend = () => {
+      if (utteranceRef.current === utterance) {
+        utteranceRef.current = null;
+        setIsSpeaking(false);
+        setVoiceStatus('Voice playback complete.');
+      }
+    };
+    utterance.onerror = (event) => {
+      if (utteranceRef.current === utterance) {
+        utteranceRef.current = null;
+        setIsSpeaking(false);
+        setVoiceStatus(`Voice playback failed: ${event.error || 'unknown error'}.`);
+      }
+    };
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const handleVoiceToggle = (event) => {
+    const enabled = event.target.checked;
+    voiceEnabledRef.current = enabled;
+    setVoiceEnabled(enabled);
+    if (!enabled) {
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+      window.speechSynthesis?.cancel();
+      utteranceRef.current = null;
+      setIsListening(false);
+      setIsSpeaking(false);
+      setVoiceStatus('Voice controls are off; text chat remains available.');
+      return;
+    }
+
+    const inputStatus = speechRecognitionAvailable
+      ? 'Microphone input is ready.'
+      : 'Speech input is unavailable in this browser.';
+    const outputStatus = speechSynthesisAvailable
+      ? ' Voice responses are enabled.'
+      : ' Speech playback is unavailable in this browser.';
+    setVoiceStatus(`${inputStatus}${outputStatus}`);
+  };
+
+  const stopListening = () => {
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    setIsListening(false);
+    setVoiceStatus('Listening cancelled.');
+  };
+
+  const startListening = () => {
+    if (!window.isSecureContext) {
+      setVoiceStatus('Microphone access requires a secure context such as HTTPS or localhost.');
+      return;
+    }
+
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      setVoiceStatus('Speech input is unavailable in this browser.');
+      return;
+    }
+
+    const recognition = new Recognition();
+    let transcriptReceived = false;
+    recognition.lang = navigator.language || 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => {
+      if (recognitionRef.current !== recognition) return;
+      setIsListening(true);
+      setVoiceStatus('Listening. Speak your request.');
+    };
+    recognition.onresult = (event) => {
+      if (recognitionRef.current !== recognition) return;
+      const transcript = Array.from(event.results)
+        .map(result => result[0]?.transcript || '')
+        .join(' ')
+        .trim();
+      if (!transcript) return;
+      transcriptReceived = true;
+      setVoiceStatus('Transcribing speech.');
+      setInput(current => `${current.trim()}${current.trim() ? ' ' : ''}${transcript}`);
+    };
+    recognition.onerror = (event) => {
+      if (recognitionRef.current !== recognition) return;
+      setIsListening(false);
+      recognitionRef.current = null;
+      const messages = {
+        'not-allowed': 'Microphone permission denied. Allow microphone access in browser settings.',
+        'service-not-allowed': 'The browser speech service is not permitted.',
+        'audio-capture': 'No microphone was found.',
+        'no-speech': 'No speech detected. Try again.',
+        network: 'Speech recognition network unavailable. Check your connection.'
+      };
+      setVoiceStatus(messages[event.error] || `Speech input failed: ${event.error || 'unknown error'}.`);
+    };
+    recognition.onend = () => {
+      setIsListening(false);
+      if (recognitionRef.current === recognition) {
+        recognitionRef.current = null;
+        setVoiceStatus(
+          transcriptReceived
+            ? 'Transcription ready. Review the text before sending.'
+            : 'Listening stopped.'
+        );
+      }
+    };
+
+    try {
+      recognitionRef.current = recognition;
+      setIsListening(true);
+      setVoiceStatus('Requesting microphone permission.');
+      recognition.start();
+    } catch (error) {
+      recognitionRef.current = null;
+      setIsListening(false);
+      setVoiceStatus(`Could not start speech input: ${error.message}`);
+    }
   };
 
   const loadMemoryData = useCallback(async () => {
@@ -447,6 +603,11 @@ function App() {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    setIsListening(false);
+    if (isSpeaking) cancelSpeech();
+
     const userText = input;
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: userText, trace: null }]);
@@ -477,6 +638,9 @@ function App() {
           trace: data.execution_trace,
           sources: data.sources || []
         }]);
+        if (voiceEnabledRef.current) {
+          speakResponse(data.response);
+        }
         if (data.trigger_dashboard) {
           setIsPopupOpen(true);
           window.open('https://www.worldmonitor.app/', '_blank');
@@ -601,6 +765,15 @@ function App() {
                       {msg.role === 'friday' ? 'FRIDAY' : 'YOU'}
                     </div>
                     <div dangerouslySetInnerHTML={{ __html: renderMarkdownLite(msg.content) }} />
+                    {msg.role === 'friday' && voiceEnabled && speechSynthesisAvailable && (
+                      <button
+                        type="button"
+                        className="message-voice-button"
+                        onClick={() => speakResponse(msg.content)}
+                      >
+                        <Volume2 size={14} /> Play response
+                      </button>
+                    )}
                     {msg.sources?.length > 0 && (
                       <div className="message-sources">
                         <strong>Sources</strong>
@@ -670,6 +843,41 @@ function App() {
               </div>
 
               <form onSubmit={handleSend} className="input-area">
+                <div className="voice-controls">
+                  <label className="voice-toggle">
+                    <input
+                      type="checkbox"
+                      checked={voiceEnabled}
+                      onChange={handleVoiceToggle}
+                      disabled={!speechRecognitionAvailable && !speechSynthesisAvailable}
+                    />
+                    <span>Enable voice</span>
+                  </label>
+                  {voiceEnabled && speechRecognitionAvailable && (
+                    <button
+                      type="button"
+                      className="voice-control-button"
+                      onClick={isListening ? stopListening : startListening}
+                      disabled={isLoading}
+                    >
+                      {isListening ? <MicOff size={15} /> : <Mic size={15} />}
+                      {isListening ? 'Cancel listening' : 'Speak request'}
+                    </button>
+                  )}
+                  {voiceEnabled && speechSynthesisAvailable && (
+                    <button
+                      type="button"
+                      className="voice-control-button"
+                      onClick={cancelSpeech}
+                      disabled={!isSpeaking}
+                    >
+                      <VolumeX size={15} /> Stop speech
+                    </button>
+                  )}
+                  <span className="voice-status" role="status" aria-live="polite">
+                    {voiceStatus}
+                  </span>
+                </div>
                 <div className="input-container">
                   <span className="input-prompt">FRIDAY&gt;</span>
                   <input

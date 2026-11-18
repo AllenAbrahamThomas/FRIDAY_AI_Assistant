@@ -63,6 +63,9 @@ class Settings:
         "MEMORY_DB_PATH",
         str(Path(__file__).resolve().parent.parent / "data" / "friday.sqlite3")
     )
+    SERVER_TTS_ENABLED: bool = os.getenv("SERVER_TTS_ENABLED", "false").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
 
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
