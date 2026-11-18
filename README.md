@@ -61,6 +61,18 @@ The repeatable 15-case intent-routing evaluation can be run from the `backend` d
 
 ## 📦 Getting Started
 
+### Docker Compose
+
+Docker Compose can run the frontend, API, and Ollama together. See the [Docker setup guide](docs/docker.md) for CPU/GPU options, model setup, persistence, and troubleshooting.
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build -d
+docker compose exec ollama ollama pull llama3.2
+```
+
+Open `http://localhost:5173`. On the first run, pulling the model can take several minutes. The Compose setup also supports the optional `compose.gpu.yaml` override on a Docker Desktop installation with WSL2 NVIDIA GPU support.
+
 ### Prerequisites
 1.  **Install Ollama:** Download and install [Ollama](https://ollama.com/).
 2.  **Pull Llama 3.2:** Run the following command in your terminal:

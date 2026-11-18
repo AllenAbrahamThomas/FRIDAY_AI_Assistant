@@ -52,7 +52,7 @@ const getLocalProfileId = () => {
 };
 
 const requestMemoryApi = async (userId, path, options = {}) => {
-  const response = await fetch(`http://localhost:8000/api/memory${path}`, {
+  const response = await fetch(`/api/memory${path}`, {
     ...options,
     headers: {
       ...(options.headers || {}),
@@ -67,7 +67,7 @@ const requestMemoryApi = async (userId, path, options = {}) => {
 };
 
 const requestHistoryApi = async (userId, path, options = {}) => {
-  const response = await fetch(`http://localhost:8000/api/history${path}`, {
+  const response = await fetch(`/api/history${path}`, {
     ...options,
     headers: {
       ...(options.headers || {}),
@@ -82,7 +82,7 @@ const requestHistoryApi = async (userId, path, options = {}) => {
 };
 
 const requestScheduledApi = async (userId, path, options = {}) => {
-  const response = await fetch(`http://localhost:8000/api/scheduled-tasks${path}`, {
+  const response = await fetch(`/api/scheduled-tasks${path}`, {
     ...options,
     headers: {
       ...(options.headers || {}),
@@ -98,7 +98,7 @@ const requestScheduledApi = async (userId, path, options = {}) => {
 
 const fetchTelemetryData = async () => {
   try {
-    const response = await fetch('http://localhost:8000/api/monitor/telemetry');
+    const response = await fetch('/api/monitor/telemetry');
     return response.ok ? await response.json() : null;
   } catch (error) {
     console.warn('Telemetry fetch failed, using fallback metrics.', error);
@@ -633,7 +633,7 @@ function App() {
 
   const fetchHealth = useCallback(async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/health');
+      const res = await fetch('/api/health');
       if (res.ok) {
         const data = await res.json();
         setHealth(data);
@@ -652,7 +652,7 @@ function App() {
 
   const fetchModels = useCallback(async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/models');
+      const res = await fetch('/api/models');
       if (res.ok) {
         const data = await res.json();
         setAvailableModels(data.models || []);
@@ -665,7 +665,7 @@ function App() {
   const handleModelChange = async (e) => {
     const selected = e.target.value;
     try {
-      const res = await fetch('http://localhost:8000/api/models/select', {
+      const res = await fetch('/api/models/select', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: selected })
@@ -734,7 +734,7 @@ function App() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/chat', {
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
