@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, ExternalLink, Globe, ShieldAlert, Compass } from 'lucide-react';
 
 const WorldMonitorPopup = ({ isOpen, onClose, telemetry }) => {
