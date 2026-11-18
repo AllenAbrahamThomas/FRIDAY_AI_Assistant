@@ -11,6 +11,7 @@ F.R.I.D.A.Y. (Female Real-Time Intelligence Device & Assistant Yard) is a local-
 *   **Research Agent:** Searches news/web sources and prepares evidence-grounded responses with clickable citations. Search snippets are treated as unverified claims; full article text is not currently retrieved.
 *   **Opt-in Persistent Memory:** Stores chats and explicit user-saved memories in local SQLite only after enabling it. The user can inspect/delete saved data; do not store passwords or secrets.
 *   **Opt-in Execution History:** Separately controls local trace retention, feedback, and deletion. Traces include intent, plan, tool status/timing, model, and provider token counts when available.
+*   **Scheduled Briefings:** Users can create, pause, resume, and delete recurring read-only research or intelligence requests, with local run history and in-app completion notices.
 *   **Model Manager:** Lists available Ollama models, supports model selection, and exposes a benchmark endpoint.
 *   **Execution Traces:** Chat responses include the request intent, selected agent, plan, step status, duration, model, and source labels.
 *   **Real-time Time-of-Day Greetings:** Adapts conversational greetings dynamically in both backend prompt contexts and frontend interface depending on local browser clock times.
@@ -47,6 +48,10 @@ The legacy `pyttsx3` backend-host playback is disabled by default to avoid dupli
 ### Memory privacy
 
 Persistent memory and execution-history retention have separate opt-in switches and are both off by default. When enabled, conversations are saved locally; individual memory items are saved only when explicitly added. Execution history includes prompts and trace details; common credential fields are redacted, but this is not a guarantee against every secret format. Turning either switch off stops new storage/retrieval for that feature but does not erase existing data. Inspect or delete saved records in the app. The browser's local profile ID is only a data-partitioning key, not authentication; do not expose this local backend to untrusted users or save secrets.
+
+### Scheduled task privacy and behavior
+
+Creating a scheduled task explicitly authorizes its recurring read-only request. Tasks run only while the backend is online, start after the first configured interval, and repeat at intervals from 15 minutes to 7 days. A run more than one interval late is recorded as missed rather than replayed; interrupted or failed runs remain visible in history. The current registered tools only retrieve information. Scheduled prompts cannot perform consequential external actions; those require a separate user approval flow. Prompts and results are stored locally in the SQLite database configured by `MEMORY_DB_PATH`, and deleting a task also deletes its run history. The UI polls for completion notices while open; missed notices remain available in the run history. Do not include passwords or secrets in scheduled prompts.
 
 ### Routing evaluation
 

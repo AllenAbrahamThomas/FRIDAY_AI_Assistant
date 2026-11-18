@@ -1,6 +1,6 @@
 import {
-  Activity, BookOpen, Cpu, Database, Globe, MessageSquare,
-  ThumbsDown, ThumbsUp, Trash2
+  Activity, BookOpen, CalendarClock, Cpu, Database, Globe, MessageSquare,
+  Pause, Play, ThumbsDown, ThumbsUp, Trash2
 } from 'lucide-react';
 
 const StatusBadge = ({ live, label, status }) => {
@@ -469,6 +469,174 @@ export function SystemSection({ health, models, onModelChange, telemetry, onRefr
           </p>
         </article>
       </div>
+    </section>
+  );
+}
+
+const formatInterval = (minutes) => {
+  if (minutes % 1440 === 0) {
+    const days = minutes / 1440;
+    return `${days} day${days === 1 ? '' : 's'}`;
+  }
+  if (minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return `${hours} hour${hours === 1 ? '' : 's'}`;
+  }
+  return `${minutes} minutes`;
+};
+
+const formatScheduleDate = (value) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString();
+};
+
+export function ScheduledTasksSection({
+  tasks,
+  runs,
+  status,
+  isLoading,
+  titleDraft,
+  promptDraft,
+  intervalDraft,
+  onTitleChange,
+  onPromptChange,
+  onIntervalChange,
+  onCreate,
+  onStatusChange,
+  onDelete
+}) {
+  return (
+    <section className="workspace-page">
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">AUTOMATION</div>
+          <h1>Scheduled tasks</h1>
+          <p>Authorize recurring, read-only research and intelligence requests.</p>
+        </div>
+        <CalendarClock size={26} />
+      </div>
+
+      <article className="workspace-card">
+        <div className="card-heading">
+          <CalendarClock size={16} />
+          <h2>Create a recurring task</h2>
+        </div>
+        <form className="scheduled-task-form" onSubmit={onCreate}>
+          <label>
+            Task name
+            <input
+              type="text"
+              value={titleDraft}
+              onChange={event => onTitleChange(event.target.value)}
+              maxLength={120}
+              required
+              placeholder="Daily intelligence briefing"
+              disabled={isLoading}
+            />
+          </label>
+          <label>
+            Request
+            <textarea
+              value={promptDraft}
+              onChange={event => onPromptChange(event.target.value)}
+              maxLength={2000}
+              required
+              placeholder="Summarize the latest developments in selected regions."
+              disabled={isLoading}
+            />
+          </label>
+          <label>
+            Repeat every (minutes)
+            <input
+              type="number"
+              value={intervalDraft}
+              onChange={event => onIntervalChange(event.target.value)}
+              min={15}
+              max={10080}
+              step={15}
+              required
+              disabled={isLoading}
+            />
+          </label>
+          <button type="submit" className="primary-button" disabled={
+            isLoading || !titleDraft.trim() || !promptDraft.trim()
+          }>
+            Create schedule
+          </button>
+        </form>
+        <p className="panel-note">
+          The first run starts after the selected interval. Tasks run only while the backend is online; runs overdue by more than one interval are skipped and recorded. Requests and results are stored locally, so do not include passwords or secrets. Scheduled tools are read-only; any consequential external action requires separate approval.
+        </p>
+      </article>
+
+      <div className="scheduled-task-list">
+        {tasks.map(task => (
+          <article className="workspace-card scheduled-task-card" key={task.task_id}>
+            <div className="scheduled-task-heading">
+              <div>
+                <h2>{task.title}</h2>
+                <StatusBadge
+                  live={task.status === 'active'}
+                  label={task.status.toUpperCase()}
+                  status={task.status === 'active' ? 'live' : 'cached'}
+                />
+              </div>
+              <div className="record-actions">
+                <button
+                  type="button"
+                  onClick={() => onStatusChange(task.task_id, task.status === 'active' ? 'paused' : 'active')}
+                  disabled={isLoading}
+                >
+                  {task.status === 'active' ? <Pause size={14} /> : <Play size={14} />}
+                  {task.status === 'active' ? 'Pause' : 'Resume'}
+                </button>
+                <button
+                  type="button"
+                  className="danger-action"
+                  onClick={() => onDelete(task.task_id)}
+                  disabled={isLoading}
+                >
+                  <Trash2 size={14} /> Delete
+                </button>
+              </div>
+            </div>
+            <p className="scheduled-task-prompt">{task.prompt}</p>
+            <div className="scheduled-task-meta">
+              <span>Every {formatInterval(task.interval_minutes)}</span>
+              <span>Next run: {formatScheduleDate(task.next_run_at)}</span>
+              <span>Last run: {task.last_status || 'Never'}</span>
+            </div>
+          </article>
+        ))}
+        {!tasks.length && <p className="empty-state">No recurring tasks have been created.</p>}
+      </div>
+
+      <article className="workspace-card scheduled-runs-card">
+        <div className="card-heading">
+          <Activity size={16} />
+          <h2>Recent scheduled runs</h2>
+        </div>
+        <div className="scheduled-run-list">
+          {runs.map(run => (
+            <article className="scheduled-run" key={run.run_id}>
+              <div className="scheduled-run-heading">
+                <strong>{run.task_title}</strong>
+                <StatusBadge
+                  live={run.status === 'completed'}
+                  label={run.status.toUpperCase()}
+                  status={run.status === 'failed' || run.status === 'missed' ? 'offline' : undefined}
+                />
+              </div>
+              <small>Scheduled: {formatScheduleDate(run.scheduled_at)}</small>
+              {run.completed_at && <small>Finished: {formatScheduleDate(run.completed_at)}</small>}
+              {run.response && <p>{run.response}</p>}
+              {run.error && <p className="error-text">{run.error}</p>}
+            </article>
+          ))}
+          {!runs.length && <p className="empty-state">Run history will appear here.</p>}
+        </div>
+      </article>
+      <p className="panel-status" aria-live="polite">{status}</p>
     </section>
   );
 }

@@ -2073,3 +2073,150 @@ body::after {
     flex-basis: 100%;
   }
 }
+
+.scheduled-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 24px 12px;
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(0, 240, 255, 0.07);
+  color: var(--text-primary);
+}
+
+.scheduled-notice > span {
+  flex: 1;
+}
+
+.scheduled-notice button {
+  border: 0;
+  background: transparent;
+  color: var(--accent-cyan);
+  cursor: pointer;
+  font: inherit;
+}
+
+.scheduled-task-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.scheduled-task-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.scheduled-task-form label:nth-child(2) {
+  grid-column: 1 / -1;
+}
+
+.scheduled-task-form input,
+.scheduled-task-form textarea {
+  width: 100%;
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  border-radius: 6px;
+  padding: 9px 10px;
+  background: rgba(2, 8, 15, 0.8);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.scheduled-task-form textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.scheduled-task-form button {
+  justify-self: start;
+}
+
+.scheduled-task-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.scheduled-task-heading,
+.scheduled-task-heading > div:first-child,
+.scheduled-run-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scheduled-task-heading {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.scheduled-task-heading h2 {
+  margin: 0 0 8px;
+}
+
+.scheduled-task-prompt {
+  margin: 12px 0;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.scheduled-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.scheduled-runs-card {
+  margin-top: 16px;
+}
+
+.scheduled-run-list {
+  display: grid;
+  gap: 10px;
+}
+
+.scheduled-run {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid rgba(0, 240, 255, 0.12);
+  padding-top: 12px;
+}
+
+.scheduled-run-heading {
+  justify-content: space-between;
+}
+
+.scheduled-run small {
+  color: var(--text-secondary);
+}
+
+.scheduled-run p {
+  margin: 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .scheduled-notice {
+    margin: 0 12px 10px;
+  }
+
+  .scheduled-task-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scheduled-task-form label:nth-child(2) {
+    grid-column: auto;
+  }
+
+  .scheduled-task-heading {
+    flex-direction: column;
+  }
+}

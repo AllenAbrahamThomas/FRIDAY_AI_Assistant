@@ -1,13 +1,31 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import chat, monitor, models, memory, history
+from app.routes import chat, monitor, models, memory, history, scheduled_tasks
 from app.config import settings
 from app.models.model_manager import model_manager
+from app.services.scheduled_task_runner import scheduled_task_runner
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    runner_task = asyncio.create_task(scheduled_task_runner.run_forever())
+    try:
+        yield
+    finally:
+        runner_task.cancel()
+        try:
+            await runner_task
+        except asyncio.CancelledError:
+            pass
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Backend API for FRIDAY AI Assistant",
-    version=settings.VERSION
+    version=settings.VERSION,
+    lifespan=lifespan
 )
 
 # Secure CORS middleware allowing configured frontend origins
@@ -25,6 +43,7 @@ app.include_router(monitor.router)
 app.include_router(models.router)
 app.include_router(memory.router)
 app.include_router(history.router)
+app.include_router(scheduled_tasks.router)
 
 @app.get("/")
 def read_root():

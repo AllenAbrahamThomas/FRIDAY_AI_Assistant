@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Send, Terminal, MessageSquare, Globe, BookOpen, Activity, Database,
-  Settings, RefreshCw, Cpu, Mic, MicOff, Volume2, VolumeX
+  Settings, RefreshCw, Cpu, Mic, MicOff, Volume2, VolumeX, CalendarClock
 } from 'lucide-react';
 import WorldMonitorPopup from './components/WorldMonitorPopup';
 import {
@@ -9,6 +9,7 @@ import {
   IntelligenceSection,
   MemorySection,
   ResearchSection,
+  ScheduledTasksSection,
   SystemSection
 } from './components/WorkspaceSections';
 
@@ -18,6 +19,7 @@ const WORKSPACE_VIEWS = [
   { id: 'research', label: 'Research', description: 'Reports and sources', icon: BookOpen },
   { id: 'activity', label: 'Activity', description: 'Plans and execution', icon: Activity },
   { id: 'memory', label: 'Memory', description: 'Saved context', icon: Database },
+  { id: 'scheduled', label: 'Schedules', description: 'Recurring tasks', icon: CalendarClock },
   { id: 'system', label: 'System', description: 'Models and services', icon: Settings }
 ];
 
@@ -75,6 +77,21 @@ const requestHistoryApi = async (userId, path, options = {}) => {
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.detail || `History request failed (${response.status})`);
+  }
+  return data;
+};
+
+const requestScheduledApi = async (userId, path, options = {}) => {
+  const response = await fetch(`http://localhost:8000/api/scheduled-tasks${path}`, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      'X-User-ID': userId
+    }
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.detail || `Scheduled task request failed (${response.status})`);
   }
   return data;
 };
@@ -144,6 +161,14 @@ function App() {
   const [historyStatus, setHistoryStatus] = useState('Execution history is off.');
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [openHistory, setOpenHistory] = useState({});
+  const [scheduledTasks, setScheduledTasks] = useState([]);
+  const [scheduledRuns, setScheduledRuns] = useState([]);
+  const [scheduledStatus, setScheduledStatus] = useState('Loading scheduled tasks.');
+  const [scheduledNotice, setScheduledNotice] = useState('');
+  const [isScheduleLoading, setIsScheduleLoading] = useState(false);
+  const [scheduleTitleDraft, setScheduleTitleDraft] = useState('');
+  const [schedulePromptDraft, setSchedulePromptDraft] = useState('');
+  const [scheduleInterval, setScheduleInterval] = useState('1440');
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [openTraces, setOpenTraces] = useState({});
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -157,6 +182,8 @@ function App() {
   const recognitionRef = useRef(null);
   const utteranceRef = useRef(null);
   const voiceEnabledRef = useRef(false);
+  const seenScheduledRunStatuses = useRef(new Map());
+  const loadedScheduledRuns = useRef(false);
   const speechRecognitionAvailable = Boolean(
     window.SpeechRecognition || window.webkitSpeechRecognition
   );
@@ -357,6 +384,38 @@ function App() {
     }
   }, [userId]);
 
+  const loadScheduledData = useCallback(async (notifyOnCompletion = false) => {
+    setIsScheduleLoading(true);
+    try {
+      const [taskData, runData] = await Promise.all([
+        requestScheduledApi(userId, ''),
+        requestScheduledApi(userId, '/runs?limit=50')
+      ]);
+      const runs = runData.runs || [];
+      const newCompletions = runs.filter(run =>
+        run.status === 'completed'
+        && seenScheduledRunStatuses.current.get(run.run_id) !== 'completed'
+      );
+      if (notifyOnCompletion && loadedScheduledRuns.current && newCompletions.length) {
+        const title = newCompletions[0].task_title;
+        setScheduledNotice(
+          newCompletions.length === 1
+            ? `${title} completed. Open Schedules to review the result.`
+            : `${newCompletions.length} scheduled tasks completed. Open Schedules to review the results.`
+        );
+      }
+      runs.forEach(run => seenScheduledRunStatuses.current.set(run.run_id, run.status));
+      loadedScheduledRuns.current = true;
+      setScheduledTasks(taskData.tasks || []);
+      setScheduledRuns(runs);
+      setScheduledStatus('Scheduled tasks and recent runs are up to date.');
+    } catch (error) {
+      setScheduledStatus(`Scheduled task service unavailable: ${error.message}`);
+    } finally {
+      setIsScheduleLoading(false);
+    }
+  }, [userId]);
+
   const handleHistoryToggle = async (event) => {
     const enabled = event.target.checked;
     setIsHistoryLoading(true);
@@ -420,6 +479,58 @@ function App() {
       setHistoryStatus(`Could not clear execution history: ${error.message}`);
     } finally {
       setIsHistoryLoading(false);
+    }
+  };
+
+  const handleCreateScheduledTask = async (event) => {
+    event.preventDefault();
+    if (!scheduleTitleDraft.trim() || !schedulePromptDraft.trim()) return;
+    setIsScheduleLoading(true);
+    try {
+      await requestScheduledApi(userId, '', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: scheduleTitleDraft.trim(),
+          prompt: schedulePromptDraft.trim(),
+          interval_minutes: Number(scheduleInterval)
+        })
+      });
+      setScheduleTitleDraft('');
+      setSchedulePromptDraft('');
+      await loadScheduledData();
+      setScheduledStatus('Scheduled task created. Its first run is due after the selected interval.');
+    } catch (error) {
+      setScheduledStatus(`Could not create scheduled task: ${error.message}`);
+    } finally {
+      setIsScheduleLoading(false);
+    }
+  };
+
+  const handleScheduledTaskStatus = async (taskId, status) => {
+    const action = status === 'paused' ? 'pause' : 'resume';
+    setIsScheduleLoading(true);
+    try {
+      await requestScheduledApi(userId, `/${taskId}/${action}`, { method: 'POST' });
+      await loadScheduledData();
+      setScheduledStatus(status === 'paused' ? 'Scheduled task paused.' : 'Scheduled task resumed.');
+    } catch (error) {
+      setScheduledStatus(`Could not update scheduled task: ${error.message}`);
+    } finally {
+      setIsScheduleLoading(false);
+    }
+  };
+
+  const handleDeleteScheduledTask = async (taskId) => {
+    setIsScheduleLoading(true);
+    try {
+      await requestScheduledApi(userId, `/${taskId}`, { method: 'DELETE' });
+      await loadScheduledData();
+      setScheduledStatus('Scheduled task and its run history were deleted.');
+    } catch (error) {
+      setScheduledStatus(`Could not delete scheduled task: ${error.message}`);
+    } finally {
+      setIsScheduleLoading(false);
     }
   };
 
@@ -599,6 +710,15 @@ function App() {
     return () => window.clearTimeout(timeout);
   }, [loadHistoryData]);
 
+  useEffect(() => {
+    const initialLoad = window.setTimeout(() => loadScheduledData(), 0);
+    const poll = window.setInterval(() => loadScheduledData(true), 30000);
+    return () => {
+      window.clearTimeout(initialLoad);
+      window.clearInterval(poll);
+    };
+  }, [loadScheduledData]);
+
   const handleSend = async (e) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -737,6 +857,14 @@ function App() {
             </button>
           </div>
         </header>
+
+        {scheduledNotice && (
+          <div className="scheduled-notice" role="status" aria-live="polite">
+            <CalendarClock size={16} />
+            <span>{scheduledNotice}</span>
+            <button type="button" onClick={() => setScheduledNotice('')}>Dismiss</button>
+          </div>
+        )}
 
         <div className="workspace-main" key={activeView}>
           {activeView === 'assistant' && (
@@ -916,6 +1044,23 @@ function App() {
               onFeedback={handleHistoryFeedback}
               onDelete={handleDeleteHistory}
               onClear={handleClearHistory}
+            />
+          )}
+          {activeView === 'scheduled' && (
+            <ScheduledTasksSection
+              tasks={scheduledTasks}
+              runs={scheduledRuns}
+              status={scheduledStatus}
+              isLoading={isScheduleLoading}
+              titleDraft={scheduleTitleDraft}
+              promptDraft={schedulePromptDraft}
+              intervalDraft={scheduleInterval}
+              onTitleChange={setScheduleTitleDraft}
+              onPromptChange={setSchedulePromptDraft}
+              onIntervalChange={setScheduleInterval}
+              onCreate={handleCreateScheduledTask}
+              onStatusChange={handleScheduledTaskStatus}
+              onDelete={handleDeleteScheduledTask}
             />
           )}
           {activeView === 'memory' && (
