@@ -817,3 +817,126 @@ body::after {
   margin-top: 8px;
   line-height: 1.35;
 }
+
+.history-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+}
+
+.history-disclosure {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.history-record-list {
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.history-record {
+  border-top: 1px solid rgba(0, 240, 255, 0.12);
+  padding: 5px 0;
+}
+
+.history-record-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.7rem;
+}
+
+.history-record-toggle strong {
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+}
+
+.history-record-toggle span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-record-toggle small {
+  color: var(--text-muted);
+}
+
+.history-record-detail {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  padding: 5px 0;
+}
+
+.history-step-list {
+  margin: 5px 0;
+}
+
+.history-step {
+  border-left: 1px solid rgba(0, 240, 255, 0.18);
+  margin: 5px 0;
+  padding-left: 6px;
+}
+
+.history-step pre {
+  color: var(--text-muted);
+  font: inherit;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.history-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.history-record-actions button,
+.history-clear-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.68rem;
+}
+
+.history-record-actions button[aria-pressed="true"] {
+  border-color: var(--accent-teal);
+  color: var(--accent-teal);
+}
+
+.history-record-actions button:disabled,
+.history-clear-button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.history-clear-button {
+  width: 100%;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.history-empty {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  padding: 5px 0;
+}

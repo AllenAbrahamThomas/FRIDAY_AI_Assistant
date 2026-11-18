@@ -10,6 +10,7 @@ F.R.I.D.A.Y. (Female Real-Time Intelligence Device & Assistant Yard) is a local-
 *   **World Intelligence Briefings:** Combines region-filtered World Monitor indicators, news, and supplemental research with timestamps, source links, freshness labels, and a distinct analysis section.
 *   **Research Agent:** Searches news/web sources and prepares evidence-grounded responses with clickable citations. Search snippets are treated as unverified claims; full article text is not currently retrieved.
 *   **Opt-in Persistent Memory:** Stores chats and explicit user-saved memories in local SQLite only after enabling it. The user can inspect/delete saved data; do not store passwords or secrets.
+*   **Opt-in Execution History:** Separately controls local trace retention, feedback, and deletion. Traces include intent, plan, tool status/timing, model, and provider token counts when available.
 *   **Model Manager:** Lists available Ollama models, supports model selection, and exposes a benchmark endpoint.
 *   **Execution Traces:** Chat responses include the request intent, selected agent, plan, step status, duration, model, and source labels.
 *   **Real-time Time-of-Day Greetings:** Adapts conversational greetings dynamically in both backend prompt contexts and frontend interface depending on local browser clock times.
@@ -34,11 +35,15 @@ The system reads settings dynamically via environment variables or falls back to
 | `WORLD_MONITOR_RETRY_COUNT` | Retry count for transient risk-feed failures | `1` |
 | `SEARCH_TIMEOUT_SECONDS` | News/search request timeout | `8.0` |
 | `WEATHER_TIMEOUT_SECONDS` | Location/weather request timeout | `8.0` |
-| `MEMORY_DB_PATH` | Local SQLite path for opt-in conversation and memory storage | `backend/data/friday.sqlite3` |
+| `MEMORY_DB_PATH` | Local SQLite path for opt-in conversation, memory, and execution history | `backend/data/friday.sqlite3` |
 
 ### Memory privacy
 
-Persistent memory is off by default. When enabled, conversations are saved locally; individual memory items are saved only when explicitly added. Turning persistence off stops further storage and retrieval but does not erase existing data. Inspect or delete saved conversations and memories in the app. The browser's local profile ID is only a data-partitioning key, not authentication; do not expose this local backend to untrusted users or save secrets.
+Persistent memory and execution-history retention have separate opt-in switches and are both off by default. When enabled, conversations are saved locally; individual memory items are saved only when explicitly added. Execution history includes prompts and trace details; common credential fields are redacted, but this is not a guarantee against every secret format. Turning either switch off stops new storage/retrieval for that feature but does not erase existing data. Inspect or delete saved records in the app. The browser's local profile ID is only a data-partitioning key, not authentication; do not expose this local backend to untrusted users or save secrets.
+
+### Routing evaluation
+
+The repeatable 15-case intent-routing evaluation can be run from the `backend` directory with `python -m app.evaluation`. It reports overall and per-intent accuracy; this local heuristic check does not evaluate live model response quality.
 
 ---
 

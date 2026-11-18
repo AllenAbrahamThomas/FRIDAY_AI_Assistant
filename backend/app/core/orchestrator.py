@@ -36,7 +36,7 @@ class FRIDAYOrchestrator:
         memory_context: str = ""
     ) -> AgentResponse:
         start_time = time.perf_counter()
-        trace_id = f"trc-{uuid.uuid4().hex[:8]}"
+        trace_id = f"trc-{uuid.uuid4().hex}"
         created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         warnings: List[str] = []
         sources_used: List[str] = []
@@ -45,6 +45,7 @@ class FRIDAYOrchestrator:
         error_msg = None
         agent_used = None
         model_latency_seconds = None
+        token_count = None
 
         logger.info(f"[{trace_id}] Received user request: '{prompt[:80]}...'")
 
@@ -116,6 +117,7 @@ class FRIDAYOrchestrator:
             final_response_text = agent_result.response_text
             model_used = agent_result.metadata.get("model_used") or model_used
             model_latency_seconds = agent_result.metadata.get("model_latency_seconds")
+            token_count = agent_result.metadata.get("token_count")
             warnings.extend(agent_result.warnings)
             sources_used.extend(agent_result.metadata.get("sources_used", []))
             response_sources = agent_result.metadata.get("sources", [])
@@ -167,6 +169,7 @@ class FRIDAYOrchestrator:
                 final_response_text = gen_res.text
                 model_used = gen_res.model or model_used
                 model_latency_seconds = gen_res.latency_seconds
+                token_count = gen_res.token_count
 
                 if not final_response_text:
                     final_response_text = (
@@ -186,6 +189,7 @@ class FRIDAYOrchestrator:
             final_response_text = gen_res.text
             model_used = gen_res.model or model_used
             model_latency_seconds = gen_res.latency_seconds
+            token_count = gen_res.token_count
             if not final_response_text:
                 final_response_text = f"Hello Allen. {context_manager.get_time_greeting()} How can I assist you today, Sir?"
             if not gen_res.success:
@@ -202,6 +206,7 @@ class FRIDAYOrchestrator:
             final_response_text = gen_res.text
             model_used = gen_res.model or model_used
             model_latency_seconds = gen_res.latency_seconds
+            token_count = gen_res.token_count
             if not final_response_text:
                 final_response_text = (
                     f"Diagnostic mode active, Allen. Core LLM engine is currently delayed. "
@@ -228,6 +233,7 @@ class FRIDAYOrchestrator:
             steps_executed=plan.steps,
             total_duration_seconds=total_duration,
             model_latency_seconds=model_latency_seconds,
+            token_count=token_count,
             model_used=model_used,
             sources_used=sources_used,
             warnings=warnings,

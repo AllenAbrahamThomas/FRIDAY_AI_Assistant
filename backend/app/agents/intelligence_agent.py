@@ -148,6 +148,7 @@ class IntelligenceAgent(BaseAgent):
             metadata={
                 "model_used": generation.model or "fallback",
                 "model_latency_seconds": generation.latency_seconds,
+                "token_count": generation.token_count,
                 "sources_used": sources_used,
                 "sources": sources,
                 "region": region,

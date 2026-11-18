@@ -129,6 +129,7 @@ async def test_orchestrator_process_world_intelligence():
         text=fake_llm_response,
         model="llama3.2",
         latency_seconds=0.1,
+        token_count=44,
         success=True
     )
 
@@ -154,6 +155,7 @@ async def test_orchestrator_process_world_intelligence():
         assert all(step.status == "completed" for step in result.execution_trace.steps_executed)
         assert result.execution_trace.total_duration_seconds >= 0
         assert result.execution_trace.model_latency_seconds == 0.1
+        assert result.execution_trace.token_count == 44
         assert "World Monitor" in result.execution_trace.sources_used
         assert "Reuters" in result.execution_trace.sources_used
         assert any(source["source"] == "Reuters" for source in result.sources)
@@ -164,6 +166,7 @@ async def test_orchestrator_answers_simple_request_without_tools_or_agent():
         text="Gravity attracts objects with mass.",
         model="llama3.2",
         latency_seconds=0.1,
+        token_count=13,
         success=True
     )
     with patch(
@@ -180,6 +183,7 @@ async def test_orchestrator_answers_simple_request_without_tools_or_agent():
     assert result.execution_trace.agent_used is None
     assert result.execution_trace.steps_executed[0].status == "completed"
     assert result.execution_trace.model_latency_seconds == 0.1
+    assert result.execution_trace.token_count == 13
     assert result.response == fake_gen_result.text
 
 @pytest.mark.asyncio
@@ -221,6 +225,7 @@ async def test_orchestrator_routes_research_through_execution_engine_and_agent()
         text="Researchers reported a quantum error-correction milestone.",
         model="qwen3:8b",
         latency_seconds=0.1,
+        token_count=27,
         success=True
     )
 
@@ -235,6 +240,7 @@ async def test_orchestrator_routes_research_through_execution_engine_and_agent()
 
     assert mock_execute.await_count == 2
     assert result.execution_trace.agent_used == "research_agent"
+    assert result.execution_trace.token_count == 27
     assert [step.status for step in result.execution_trace.steps_executed] == [
         "completed", "completed", "completed", "completed"
     ]

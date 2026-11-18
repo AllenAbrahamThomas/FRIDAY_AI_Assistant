@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Literal
 from app.core.memory_auth import get_optional_user_id
 from app.schemas.execution import ExecutionTrace
 from app.core.orchestrator import friday_orchestrator
+from app.services.execution_history_service import execution_history_service
 from app.services.memory_service import memory_service
 
 logger = logging.getLogger(__name__)
@@ -51,9 +52,15 @@ async def chat_endpoint(
         memory_context = ""
         session_id = None
         memory_enabled = False
+        history_enabled = False
         if user_id:
             preferences = await asyncio.to_thread(memory_service.get_preferences, user_id)
             memory_enabled = preferences["memory_enabled"]
+            history_preferences = await asyncio.to_thread(
+                execution_history_service.get_settings,
+                user_id
+            )
+            history_enabled = history_preferences["enabled"]
             if memory_enabled:
                 if request.session_id:
                     session_id = str(request.session_id)
@@ -91,6 +98,12 @@ async def chat_endpoint(
                 session_id,
                 clean_prompt,
                 agent_res.response
+            )
+        if history_enabled and user_id and agent_res.execution_trace:
+            await asyncio.to_thread(
+                execution_history_service.save_trace,
+                user_id,
+                agent_res.execution_trace
             )
         return ChatResponse(
             response=agent_res.response,

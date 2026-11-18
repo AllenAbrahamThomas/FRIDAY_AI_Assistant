@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Send, Terminal, Cpu, ShieldAlert, Globe, Compass,
-  RefreshCw, MessageSquare, Radio, HelpCircle, Activity, CheckCircle, AlertTriangle
+  RefreshCw, MessageSquare, Radio, HelpCircle, Activity, CheckCircle, AlertTriangle,
+  ThumbsUp, ThumbsDown, Trash2
 } from 'lucide-react';
 import WorldMonitorPopup from './components/WorldMonitorPopup';
 
@@ -48,6 +49,21 @@ const requestMemoryApi = async (userId, path, options = {}) => {
   return data;
 };
 
+const requestHistoryApi = async (userId, path, options = {}) => {
+  const response = await fetch(`http://localhost:8000/api/history${path}`, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      'X-User-ID': userId
+    }
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.detail || `History request failed (${response.status})`);
+  }
+  return data;
+};
+
 const getInitialGreeting = () => {
   const hour = new Date().getHours();
   let timeGreeting = "Greetings Boss.";
@@ -85,6 +101,11 @@ function App() {
   const [memoryCategory, setMemoryCategory] = useState('preference');
   const [memoryDraft, setMemoryDraft] = useState('');
   const [isMemoryLoading, setIsMemoryLoading] = useState(false);
+  const [historyEnabled, setHistoryEnabled] = useState(false);
+  const [executionHistory, setExecutionHistory] = useState([]);
+  const [historyStatus, setHistoryStatus] = useState('Execution history is off.');
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [openHistory, setOpenHistory] = useState({});
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [openTraces, setOpenTraces] = useState({});
 
@@ -96,6 +117,10 @@ function App() {
 
   useEffect(() => {
     loadMemoryData();
+  }, [userId]);
+
+  useEffect(() => {
+    loadHistoryData();
   }, [userId]);
 
   useEffect(() => {
@@ -130,6 +155,93 @@ function App() {
       setMemoryStatus(`Memory manager unavailable: ${error.message}`);
     } finally {
       setIsMemoryLoading(false);
+    }
+  };
+
+  const loadHistoryData = async () => {
+    setIsHistoryLoading(true);
+    try {
+      const [settings, result] = await Promise.all([
+        requestHistoryApi(userId, '/settings'),
+        requestHistoryApi(userId, '')
+      ]);
+      setHistoryEnabled(settings.enabled);
+      setExecutionHistory(result.history);
+      setHistoryStatus(
+        settings.enabled
+          ? 'New execution traces are being saved locally for this profile.'
+          : 'History saving is off. Existing records remain until deleted.'
+      );
+    } catch (error) {
+      setHistoryStatus(`Execution history unavailable: ${error.message}`);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
+  const handleHistoryToggle = async (event) => {
+    const enabled = event.target.checked;
+    setIsHistoryLoading(true);
+    try {
+      const settings = await requestHistoryApi(userId, '/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+      });
+      setHistoryEnabled(settings.enabled);
+      await loadHistoryData();
+      setHistoryStatus(
+        enabled
+          ? 'Execution history is on. New traces will be saved locally.'
+          : 'Execution history is off. Existing records remain until deleted.'
+      );
+    } catch (error) {
+      setHistoryStatus(`Could not update execution history settings: ${error.message}`);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
+  const handleHistoryFeedback = async (traceId, rating) => {
+    setIsHistoryLoading(true);
+    try {
+      await requestHistoryApi(userId, `/${traceId}/feedback`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating })
+      });
+      await loadHistoryData();
+      setHistoryStatus('Feedback recorded.');
+    } catch (error) {
+      setHistoryStatus(`Could not record feedback: ${error.message}`);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
+  const handleDeleteHistory = async (traceId) => {
+    setIsHistoryLoading(true);
+    try {
+      await requestHistoryApi(userId, `/${traceId}`, { method: 'DELETE' });
+      await loadHistoryData();
+      setHistoryStatus('Execution record deleted.');
+    } catch (error) {
+      setHistoryStatus(`Could not delete execution record: ${error.message}`);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
+  const handleClearHistory = async () => {
+    setIsHistoryLoading(true);
+    try {
+      await requestHistoryApi(userId, '', { method: 'DELETE' });
+      await loadHistoryData();
+      setHistoryStatus('Execution history cleared.');
+    } catch (error) {
+      setHistoryStatus(`Could not clear execution history: ${error.message}`);
+    } finally {
+      setIsHistoryLoading(false);
     }
   };
 
@@ -342,6 +454,9 @@ function App() {
           setIsPopupOpen(true);
           window.open('https://www.worldmonitor.app/', '_blank');
         }
+        if (historyEnabled && data.execution_trace) {
+          await loadHistoryData();
+        }
       } else {
         setMessages(prev => [...prev, {
           role: 'friday',
@@ -535,6 +650,108 @@ function App() {
             )}
           </div>
           <div className="memory-status" aria-live="polite">{memoryStatus}</div>
+        </div>
+
+        <div className="widget">
+          <div className="widget-title">
+            <Activity size={14} />
+            <span>Execution History</span>
+          </div>
+          <label className="history-toggle">
+            <input
+              type="checkbox"
+              checked={historyEnabled}
+              onChange={handleHistoryToggle}
+              disabled={isHistoryLoading}
+            />
+            Save execution traces
+          </label>
+          <p className="history-disclosure">
+            Off by default. When enabled, request text, plans, tool status, timings, and available model usage are saved locally. Common credential fields are redacted; do not include secrets. Turning this off retains existing records.
+          </p>
+          <div className="history-record-list">
+            {executionHistory.map(record => (
+              <div className="history-record" key={record.trace_id}>
+                <button
+                  type="button"
+                  className="history-record-toggle"
+                  onClick={() => setOpenHistory(previous => ({
+                    ...previous,
+                    [record.trace_id]: !previous[record.trace_id]
+                  }))}
+                  aria-expanded={Boolean(openHistory[record.trace_id])}
+                >
+                  <strong>{record.intent}</strong>
+                  <span>{record.trace.user_prompt}</span>
+                  <small>{record.total_duration_seconds}s · {record.model_used}</small>
+                </button>
+                {openHistory[record.trace_id] && (
+                  <div className="history-record-detail">
+                    <div>Agent: {record.agent_used || 'Direct'} · Model latency: {record.model_latency_seconds ?? 'N/A'}s · Tokens: {record.token_count ?? 'N/A'}</div>
+                    <div className="history-step-list">
+                      {record.trace.steps_executed.map(step => (
+                        <div className="history-step" key={`${record.trace_id}-${step.step_number}`}>
+                          <div>
+                            {step.step_number}. {step.description} — {step.status} ({step.duration_seconds}s)
+                            {step.error ? `: ${step.error}` : ''}
+                          </div>
+                          {step.tool_name && (
+                            <pre>Input: {JSON.stringify(step.tool_input)}</pre>
+                          )}
+                          {step.observation && (
+                            <div>Output summary: {step.observation}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {record.trace.warnings.length > 0 && (
+                      <div>Warnings: {record.trace.warnings.join(' · ')}</div>
+                    )}
+                    <div className="history-record-actions">
+                      <button
+                        type="button"
+                        onClick={() => handleHistoryFeedback(record.trace_id, 'positive')}
+                        disabled={isHistoryLoading}
+                        aria-pressed={record.feedback === 'positive'}
+                      >
+                        <ThumbsUp size={12} /> Helpful
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleHistoryFeedback(record.trace_id, 'negative')}
+                        disabled={isHistoryLoading}
+                        aria-pressed={record.feedback === 'negative'}
+                      >
+                        <ThumbsDown size={12} /> Not helpful
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteHistory(record.trace_id)}
+                        disabled={isHistoryLoading}
+                        aria-label="Delete execution record"
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+            {!executionHistory.length && (
+              <div className="history-empty">No execution records saved.</div>
+            )}
+          </div>
+          {!!executionHistory.length && (
+            <button
+              type="button"
+              className="history-clear-button"
+              onClick={handleClearHistory}
+              disabled={isHistoryLoading}
+            >
+              Clear History
+            </button>
+          )}
+          <div className="memory-status" aria-live="polite">{historyStatus}</div>
         </div>
 
         {/* Geopolitical Status Widget */}

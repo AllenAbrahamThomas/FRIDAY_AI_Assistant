@@ -1,0 +1,94 @@
+{
+  "cases": [
+    {
+      "id": "greeting-short",
+      "prompt": "Hello Friday",
+      "expected_intent": "greeting",
+      "requires_tools": false
+    },
+    {
+      "id": "general-explanation",
+      "prompt": "Explain gravity in simple terms.",
+      "expected_intent": "general",
+      "requires_tools": false
+    },
+    {
+      "id": "general-planning",
+      "prompt": "Can you help me plan my study schedule?",
+      "expected_intent": "general",
+      "requires_tools": false
+    },
+    {
+      "id": "weather-current",
+      "prompt": "What is the temperature and weather outside?",
+      "expected_intent": "weather",
+      "requires_tools": true
+    },
+    {
+      "id": "weather-location",
+      "prompt": "Where am I?",
+      "expected_intent": "weather",
+      "requires_tools": true
+    },
+    {
+      "id": "weather-forecast",
+      "prompt": "What is the forecast for tomorrow?",
+      "expected_intent": "weather",
+      "requires_tools": true
+    },
+    {
+      "id": "world-threat-matrix",
+      "prompt": "What is the current threat matrix for Ukraine?",
+      "expected_intent": "world_intelligence",
+      "requires_tools": true
+    },
+    {
+      "id": "world-briefing",
+      "prompt": "Prepare an intelligence briefing on Sudan.",
+      "expected_intent": "world_intelligence",
+      "requires_tools": true
+    },
+    {
+      "id": "world-current-events",
+      "prompt": "What is happening in the world today?",
+      "expected_intent": "world_intelligence",
+      "requires_tools": true
+    },
+    {
+      "id": "research-breakthroughs",
+      "prompt": "Research quantum computing breakthroughs.",
+      "expected_intent": "research",
+      "requires_tools": true
+    },
+    {
+      "id": "research-fact-check",
+      "prompt": "Fact-check the latest claim about renewable energy.",
+      "expected_intent": "research",
+      "requires_tools": true
+    },
+    {
+      "id": "research-compare",
+      "prompt": "Compare sources covering recent championship results.",
+      "expected_intent": "research",
+      "requires_tools": true
+    },
+    {
+      "id": "research-news",
+      "prompt": "Find recent news about the NASA Artemis launch.",
+      "expected_intent": "research",
+      "requires_tools": true
+    },
+    {
+      "id": "coding-python",
+      "prompt": "Write a Python function to sort a list.",
+      "expected_intent": "coding",
+      "requires_tools": false
+    },
+    {
+      "id": "coding-debug",
+      "prompt": "Debug this JavaScript function.",
+      "expected_intent": "coding",
+      "requires_tools": false
+    }
+  ]
+}

@@ -204,6 +204,7 @@ class ResearchAgent(BaseAgent):
                 "contradictions": contradictions,
                 "model_used": gen_res.model or "fallback",
                 "model_latency_seconds": gen_res.latency_seconds,
+                "token_count": gen_res.token_count,
                 "successful_searches": successful_searches,
                 "sources_used": sources_used,
                 "evidence_processed": True,
